@@ -347,6 +347,11 @@ window.__ModuleLoader__.load({
       const [rate, setRate] = useState(0);
       const [primed, setPrimed] = useState(false);
       const [online, setOnline] = useState(true);
+      // The host only starts sending `offsetMinutes` once the timezone-aware
+      // build is loaded, i.e. after a host restart. Until then the hour labels
+      // still follow the host process's timezone and the UI should say so
+      // instead of silently showing a wrong axis.
+      const [hostPatched, setHostPatched] = useState(true);
       const [history, setHistory] = useState([0, 0]);
       const [now, setNow] = useState(() => Date.now());
       const [pos, setPos] = useState(() => readPos() || { x: null, y: null });
@@ -357,11 +362,16 @@ window.__ModuleLoader__.load({
       useEffect(() => {
         let alive = true;
         const pull = () => {
-          fetch(ENDPOINT, { cache: 'no-store' })
+          // Hand the host this browser's UTC offset: day and hour buckets must
+          // follow the viewer's clock, not the server process's timezone.
+          let query = '';
+          try { query = '?off=' + String(-new Date().getTimezoneOffset()); } catch { query = ''; }
+          fetch(ENDPOINT + query, { cache: 'no-store' })
             .then((r) => (r.ok ? r.json() : null))
             .then((d) => {
               if (!alive || !d) return;
               const next = { ...emptySnapshot(), ...d };
+              setHostPatched(typeof d.offsetMinutes === 'number');
               const total = Number(next.today) || 0;
               const t = Date.now();
               const list = samples.current;
@@ -496,7 +506,8 @@ window.__ModuleLoader__.load({
           h('button', { className: 'tb-tab', role: 'tab', type: 'button', 'aria-selected': view === 'hour', 'data-on': view === 'hour' ? 'on' : 'off', onClick: () => setView('hour') }, '按小时')),
         h('div', { className: 'tb-chart-title' },
           h('strong', null, view === 'model' ? '模型占比' : '每小时活动'),
-          h('span', null, view === 'model' ? '今日实时' : '今日 24 小时')),
+          h('span', { title: hostPatched ? '按浏览器时区分桶' : 'Host 仍在运行旧版本：小时标签按 Host 进程时区，重启后自动按浏览器时区重算' },
+            view === 'model' ? '今日实时' : (hostPatched ? '今日 24 小时' : '今日 24 小时 · 待重启校准'))),
         h('div', { className: 'tb-legend' },
           modelNames.slice(0, 5).map((m, i) => h('div', { className: 'tb-model', key: 'lg' + m },
             h('i', { className: 'tb-dot', style: { background: PALETTE[i % PALETTE.length], color: PALETTE[i % PALETTE.length] } }),

@@ -1,0 +1,8 @@
+# Submission draft for awesome-dsh-plugin; submit only after the public repository exists.
+url: https://github.com/yuna78/dsh-plugin-token-burned
+name: yuna78/dsh-plugin-token-burned
+category: usage
+description:
+  en: 'A floating DSH Token Burn Dock with live model, hourly, and 30-day usage views.'
+  zh: 悬浮式 DSH Token 燃烧指数 Dock，支持模型、小时和近 30 天用量视图。
+icon: https://raw.githubusercontent.com/yuna78/dsh-plugin-token-burned/main/icon.svg

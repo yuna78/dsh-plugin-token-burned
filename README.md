@@ -29,6 +29,10 @@ DSH 的悬浮 Token 燃烧指数 Dock：把全部 session 的 Token 使用量汇
 
 统计范围为当前 DSH Host 中可观察到的**全部 session**。数据来自 `assistant/message` 的 provider usage：输入、缓存读写和输出 Token。没有可用 usage 时不会伪造账单数据。
 
+- **"今日"与"某小时"按浏览器时区分桶**：客户端把自身 UTC 偏移（`?off=`，分钟）传给 Host，Host 用固定偏移计算日/小时边界。这样即使 Host 进程跑在 UTC 下，柱子也不会落到错误的小时标签上（历史 bug：Host 用 `getHours()` 按进程时区分桶，与浏览器标签不一致）。
+- **持久化是原子的**：状态写入 `storages/dsh-token-burned.json`（先写 `.tmp` 再 `rename`），且**写入前一定等待历史加载完成**。旧实现存在竞态：重启后新进程若先写入，会用仅含最新事件的 Map 覆盖整个文件，导致历史被清空。
+- 记录保留 31 天，读取时按 30 天窗口聚合；更早的条目会在加载时清理。
+
 ## 安装
 
 在 DSH 的插件安装界面搜索：

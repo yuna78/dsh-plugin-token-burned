@@ -23,6 +23,10 @@ A floating Token Burn Dock for DeepSeek Harness (DSH). It summarizes observable 
 
 The plugin aggregates observable `assistant/message` provider usage across all sessions. Totals include input, cache read/write, and output tokens. It never fabricates billing data when usage is unavailable.
 
+- **"Today" and "which hour" follow the browser's timezone.** The client passes its UTC offset (`?off=`, minutes) to the host, which buckets days and hours with that fixed offset. A host process running under `TZ=UTC` used to bucket by its own `getHours()`, so bars landed under the wrong hour labels.
+- **Persistence is atomic and load-ordered.** State lives in `storages/dsh-token-burned.json` (write `.tmp`, then `rename`), and a write always waits for history to finish loading. The old code could have a restarted process overwrite the file with a Map that held only the newest event, wiping all earlier records.
+- Entries are retained for 31 days and aggregated over a 30-day window; anything older is pruned at load time.
+
 ## License
 
 MIT
