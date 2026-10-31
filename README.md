@@ -2,6 +2,8 @@
 
 ![Token Burn Dock — real runtime screenshots](https://raw.githubusercontent.com/yuna78/dsh-plugin-token-burned/main/docs/preview-real.webp)
 
+> 上图说明：左侧为展开面板，右侧为最小化胶囊。
+
 [English](README.en.md)
 
 > 把每一次模型调用变成可见的“热量”：看见谁在烧、什么时候烧、今天烧了多少。
