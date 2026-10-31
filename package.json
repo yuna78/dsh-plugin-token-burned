@@ -13,7 +13,7 @@
   "engines": { "dsh": ">=0.2.1-rc.2 <0.3.0" },
   "peerDependencies": { "@deepseek-ai/dsh": ">=0.2.1-rc.2 <0.3.0" },
   "exports": { ".": "./index.js", "./client": "./client.js", "./package.json": "./package.json", "./icon": "./icon.svg" },
-  "files": ["index.js", "client.js", "cordis.patch.yml", "icon.svg", "README.md", "LICENSE", "package.json"],
+  "files": ["index.js", "client.js", "cordis.patch.yml", "icon.svg", "README.md", "README.en.md", "docs/preview.svg", "docs/preview-real.webp", "LICENSE", "package.json"],
   "scripts": { "test": "node verify/smoke.mjs", "prepublishOnly": "node verify/smoke.mjs" },
   "dsh": { "bundle": { "patch": "./cordis.patch.yml" }, "client": { "platform": "web", "immediately": true, "inject": ["@deepseek-ai/dsh-client-ui-layout"] } }
 }

@@ -1,5 +1,7 @@
 # dsh-plugin-token-burned
 
+![Token Burn Dock — real runtime screenshots](https://raw.githubusercontent.com/yuna78/dsh-plugin-token-burned/main/docs/preview-real.webp)
+
 A floating Token Burn Dock for DeepSeek Harness (DSH). It summarizes observable usage across all sessions in a compact live panel.
 
 ## Features

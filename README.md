@@ -1,6 +1,12 @@
 # dsh-plugin-token-burned
 
+![Token Burn Dock — real runtime screenshots](https://raw.githubusercontent.com/yuna78/dsh-plugin-token-burned/main/docs/preview-real.webp)
+
 [English](README.en.md)
+
+> 把每一次模型调用变成可见的“热量”：看见谁在烧、什么时候烧、今天烧了多少。
+
+[安装插件](https://github.com/yuna78/dsh-plugin-token-burned/releases/tag/v0.1.0) · [提交反馈](https://github.com/yuna78/dsh-plugin-token-burned/issues)
 
 DSH 的悬浮 Token 燃烧指数 Dock：把全部 session 的 Token 使用量汇总成一个轻量的实时面板。
 
