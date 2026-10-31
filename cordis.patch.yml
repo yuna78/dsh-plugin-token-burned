@@ -1,0 +1,3 @@
+- insert:
+    - id: dsh-token-burned
+      name: dsh-plugin-token-burned
