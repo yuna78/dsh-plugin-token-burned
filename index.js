@@ -22,6 +22,11 @@ const timeOf = (event) => {
   return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
 };
 const statePath = () => join(process.env.DSH_TOKEN_BURNED_STATE || process.env.DSH_HOME || join(process.env.HOME || process.cwd(), '.dsh'), 'storages', 'dsh-token-burned.json');
+// Backfilled history lives beside the state file, not inside it. A running host
+// rewrites the state file from its in-memory map on the next usage event, so a
+// one-shot backfill could not survive being written while the host is up. The
+// sidecar is only ever read (merged at startup), never rewritten by the host.
+const baselinePath = () => statePath().replace(/\.json$/, '') + '.baseline.json';
 const legacyStatePaths = () => [join(process.env.HOME || process.cwd(), 'dsh-token-burned.json'), join(process.env.XDG_STATE_HOME || '', 'dsh-token-burned.json')].filter(Boolean);
 
 // --- Timezone -----------------------------------------------------------------
@@ -53,6 +58,20 @@ export function apply(ctx) {
   let loaded = false;
   let saveChain = Promise.resolve();
   let activeOffset = null;
+  // Per-calendar-date totals for days that exist only in session transcripts.
+  // Kept as ~30 numbers so the history is not a multi-megabyte entry dump; raw
+  // entries (today) always win for the same day, so nothing is double counted.
+  const baseline = {};
+  const sidecar = baselinePath();
+  // Both sources (state file, sidecar) are merged by "largest wins" so re-running
+  // the backfill, or a stale sidecar next to a newer state file, is idempotent.
+  const mergeBaseline = (source) => {
+    if (!source || typeof source !== 'object') return;
+    for (const [date, tokens] of Object.entries(source)) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+      baseline[date] = Math.max(number(baseline[date]), number(tokens));
+    }
+  };
 
   const prune = (now) => {
     const off = hostOffsetAt(now);
@@ -60,6 +79,11 @@ export function apply(ctx) {
     for (const [key, item] of entries) {
       const at = Date.parse(item.at);
       if (!Number.isFinite(at) || today - dayNumberOf(at, off) >= KEEP_DAYS) entries.delete(key);
+    }
+    const todayDate = new Date(now + off * 60000).toISOString().slice(0, 10);
+    for (const date of Object.keys(baseline)) {
+      const age = Math.round((Date.parse(todayDate) - Date.parse(date)) / DAY);
+      if (!Number.isFinite(age) || age < 0 || age >= KEEP_DAYS) delete baseline[date];
     }
   };
 
@@ -69,14 +93,15 @@ export function apply(ctx) {
     const today = dayNumberOf(now, off);
     const next = empty();
     next.offsetMinutes = off;
+    const hasRaw = new Array(MAX_AGE_DAYS).fill(false);
     for (const item of entries.values()) {
       const at = Date.parse(item.at);
       if (!Number.isFinite(at)) continue;
       const age = today - dayNumberOf(at, off);
       if (age < 0 || age >= MAX_AGE_DAYS) continue;
       const n = number(item.tokens);
-      next.recent30 += n;
       next.days[MAX_AGE_DAYS - 1 - age] += n;
+      hasRaw[age] = true;
       if (age === 0) {
         next.today += n;
         next.byModel[item.model] = (next.byModel[item.model] || 0) + n;
@@ -84,6 +109,19 @@ export function apply(ctx) {
       }
       next.updatedAt = next.updatedAt && next.updatedAt > item.at ? next.updatedAt : item.at;
     }
+    // Days present only in session transcripts come from the per-day baseline.
+    // A day with raw entries ignores its baseline, so nothing is counted twice.
+    const todayDate = new Date(now + off * 60000).toISOString().slice(0, 10);
+    for (const [date, tokens] of Object.entries(baseline)) {
+      const parsed = Date.parse(date);
+      if (!Number.isFinite(parsed)) continue;
+      const age = Math.round((Date.parse(todayDate) - parsed) / DAY);
+      if (age < 0 || age >= MAX_AGE_DAYS || hasRaw[age]) continue;
+      const n = number(tokens);
+      next.days[MAX_AGE_DAYS - 1 - age] = n;
+      if (age === 0) next.today = n;
+    }
+    next.recent30 = next.days.reduce((sum, v) => sum + v, 0);
     Object.assign(stats, next);
     return next;
   };
@@ -96,7 +134,7 @@ export function apply(ctx) {
     saveChain = saveChain.then(async () => {
       await ready;
       try {
-        const payload = JSON.stringify({ version: 2, entries: [...entries.values()] });
+        const payload = JSON.stringify({ version: 3, entries: [...entries.values()], baseline: baseline });
         const dir = file.replace(/[/\\][^/\\]+$/, '');
         const tmp = file + '.tmp';
         await mkdir(dir, { recursive: true });
@@ -125,6 +163,14 @@ export function apply(ctx) {
         if (entries.has(item.key)) continue;
         entries.set(item.key, { key: item.key, tokens: number(item.tokens), model: String(item.model || '当前模型'), at: item.at });
       }
+      const savedBaseline = saved?.baseline;
+      if (savedBaseline && typeof savedBaseline === 'object') mergeBaseline(savedBaseline);
+      // The one-shot backfill writes this file; it is absent until someone runs
+      // `npm run backfill -- --write`.
+      try {
+        const backfilled = JSON.parse(await readFile(sidecar, 'utf8'));
+        mergeBaseline(backfilled?.baseline && typeof backfilled.baseline === 'object' ? backfilled.baseline : backfilled);
+      } catch { /* no backfill has been applied */ }
     } catch { /* first run or unavailable storage */ }
     prune(Date.now());
     rebuild(activeOffset);

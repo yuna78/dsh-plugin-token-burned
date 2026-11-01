@@ -1,0 +1,7 @@
+.DS_Store
+node_modules/
+# DSH dev-workflow runtime records (task/request logs)
+.dsh-dev/
+# state backups produced by verify/backfill.mjs
+*.bak
+*.tmp

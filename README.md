@@ -48,6 +48,17 @@ npm install
 npm test
 ```
 
+### 回填历史用量
+
+0.2.0 之前的版本每次重启都会丢状态文件，历史天数因此缺失。可以一次性从本机会话日志里补回来：
+
+```bash
+npm run backfill            # 只报告（默认 dry-run）
+npm run backfill -- --write # 写基线文件，然后重启 DSH
+```
+
+它只写 `~/.dsh/storages/dsh-token-burned.baseline.json`（约 30 个数字，不到 1 KB），不碰状态文件；今天的数据始终来自实时事件，不会被回填覆盖。
+
 ## License
 
 MIT
