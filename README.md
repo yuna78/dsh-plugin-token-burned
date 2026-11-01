@@ -84,6 +84,47 @@ npm run backfill -- --write # 写基线文件，然后重启 DSH
 
 它只写 `~/.dsh/storages/dsh-token-burned.baseline.json`（约 30 个数字，不到 1 KB），不碰状态文件；今天的数据始终来自实时事件，不会被回填覆盖。
 
+## 发版
+
+发布到 npm 由维护者手动执行（没有 CI 自动发布）。一次发版 = 改版本 + 记 CHANGELOG + 打 tag + 发 GitHub Release + `npm publish`。
+
+1. **确认干净**：工作区没有未提交改动，`npm test` 全绿（`prepublishOnly` 也会再跑一遍）。
+2. **记 CHANGELOG**：在 `CHANGELOG.md` 顶部新开 `## [x.y.z] — YYYY-MM-DD`，按 Added / Changed / Fixed 写清楚。
+3. **bump 版本并打 tag**（tag 带 `v` 前缀，与版本号一致）：
+
+   ```bash
+   npm version patch --no-git-tag-version   # 或 minor / major
+   git add package.json CHANGELOG.md README.md README.en.md
+   git commit -m "chore(release): x.y.z"
+   git tag -a vx.y.z -m "x.y.z"
+   git push && git push --tags
+   ```
+
+4. **打包自检**（只打不发布，确认包内容）：
+
+   ```bash
+   npm pack --dry-run
+   npm pack --pack-destination dist
+   ```
+
+   包内只该有 `files` 白名单里的 9 个文件（`index.js`、`client.js`、`cordis.patch.yml`、`icon.svg`、`README.md`、`README.en.md`、`CHANGELOG.md`、`LICENSE`、`package.json`），约 27 kB；`verify/` 与 `docs/` 下的大图不进包。
+5. **发 GitHub Release**：tag 选 `vx.y.z`，正文直接贴 CHANGELOG 的对应小节。README 的联系表图片走 `raw.githubusercontent.com/.../main/docs/preview-tiers.webp`，所以**先 push 再发 Release**，否则 npm 页面上图片会 404。
+6. **发布**（需要 npm 2FA）：
+
+   ```bash
+   npm publish
+   ```
+
+7. **发布后核对**：
+
+   ```bash
+   npm view dsh-plugin-token-burned version dist.tarball
+   npm pack dsh-plugin-token-burned@x.y.z --pack-destination /tmp
+   tar tzf /tmp/dsh-plugin-token-burned-x.y.z.tgz
+   ```
+
+> 已发布的版本号不能覆盖，出问题只能再发一个 patch 版。`prepublishOnly` 已绑定 `npm test`，即使忘了手动跑测试，`npm publish` 也会先被 smoke / baseline / tiers 三套测试拦下来。
+
 ## License
 
 MIT

@@ -3,6 +3,20 @@
 本文件记录 `dsh-plugin-token-burned` 的版本变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.3.1] — 2026-11-01
+
+文档与发布流程整理，插件行为与 0.3.0 相同。
+
+### Added
+
+- README 新增 **「发版」章节**（`## 发版` / `## Releasing`）：从版本号、CHANGELOG、tag、GitHub Release 到 `npm publish` 和发布后核对的完整步骤，
+  并写明包内文件白名单（`verify/`、`docs/` 大图不进包）、README 图片依赖 GitHub raw（先 push 再发 Release），以及已发布版本不可覆盖。
+- `dist/` 加入 `.gitignore`：`npm pack` 产出的 tarball 属于构建产物，不入库。
+
+### Changed
+
+- `market-listing.yml` 与已提交的 awesome-dsh-plugin 条目（PR #11062）对齐。
+
 ## [0.3.0] — 2026-11-01
 
 火焰从"一档"变成 **7 档火候**：从一点星火到整面火墙，实时速率越高，火焰档位越猛。

@@ -52,6 +52,47 @@ The plugin aggregates observable `assistant/message` provider usage across all s
 - **Persistence is atomic and load-ordered.** State lives in `storages/dsh-token-burned.json` (write `.tmp`, then `rename`), and a write always waits for history to finish loading. The old code could have a restarted process overwrite the file with a Map that held only the newest event, wiping all earlier records.
 - Entries are retained for 31 days and aggregated over a 30-day window; anything older is pruned at load time.
 
+## Releasing
+
+Releases are published manually by a maintainer (no CI publish job). A release = version bump + CHANGELOG + tag + GitHub Release + `npm publish`.
+
+1. **Clean tree**: no uncommitted changes and `npm test` green (`prepublishOnly` re-runs it anyway).
+2. **CHANGELOG**: add `## [x.y.z] — YYYY-MM-DD` at the top, grouped as Added / Changed / Fixed.
+3. **Bump and tag** (the `v` prefix matches the version):
+
+   ```bash
+   npm version patch --no-git-tag-version   # or minor / major
+   git add package.json CHANGELOG.md README.md README.en.md
+   git commit -m "chore(release): x.y.z"
+   git tag -a vx.y.z -m "x.y.z"
+   git push && git push --tags
+   ```
+
+4. **Check the tarball** (pack only, do not publish yet):
+
+   ```bash
+   npm pack --dry-run
+   npm pack --pack-destination dist
+   ```
+
+   Only the 9 files in the `files` whitelist should be inside (`index.js`, `client.js`, `cordis.patch.yml`, `icon.svg`, `README.md`, `README.en.md`, `CHANGELOG.md`, `LICENSE`, `package.json`) — around 27 kB. `verify/` and the large `docs/` images are git-only.
+5. **GitHub Release**: pick tag `vx.y.z` and paste the matching CHANGELOG section. The contact-sheet image in the READMEs loads from `raw.githubusercontent.com/.../main/docs/preview-tiers.webp`, so **push before creating the Release** or the image will 404 on the npm page.
+6. **Publish** (npm 2FA required):
+
+   ```bash
+   npm publish
+   ```
+
+7. **Verify after publish**:
+
+   ```bash
+   npm view dsh-plugin-token-burned version dist.tarball
+   npm pack dsh-plugin-token-burned@x.y.z --pack-destination /tmp
+   tar tzf /tmp/dsh-plugin-token-burned-x.y.z.tgz
+   ```
+
+> Published versions are immutable — a mistake needs a new patch release. `prepublishOnly` is bound to `npm test`, so even a forgotten test run is caught by smoke / baseline / tiers before anything is uploaded.
+
 ## License
 
 MIT

@@ -5,3 +5,5 @@ node_modules/
 # state backups produced by verify/backfill.mjs
 *.bak
 *.tmp
+# npm pack output (release tarballs are build artifacts)
+dist/
