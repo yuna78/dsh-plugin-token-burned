@@ -41,14 +41,17 @@ await writeFile(join(root, 'storages', 'dsh-token-burned.baseline.json'), JSON.s
 }), 'utf8');
 
 let routeFetch = null;
+// Mirror the Host: `connection` is handed to `apply` directly and the route is
+// registered through it. A stub that only implements `inject` would hide a route
+// that never gets registered — the dock then reads whoever else owns the path.
 const ctx = {
   on: () => {},
-  inject: (_deps, fn) => fn({
-    connection: { fetch: { register: (spec) => { routeFetch = spec.fetch; return () => {}; } } },
-    effect: (fn) => fn(),
-  }),
+  connection: { fetch: { register: (spec) => { routeFetch = spec.fetch; return () => {}; } } },
+  effect: (fn) => fn(),
 };
 apply(ctx);
+
+assert.equal(typeof routeFetch, 'function', 'apply must register the route on ctx.connection.fetch');
 
 const response = await routeFetch(new Request(`http://host${ROUTE}?off=${off}`));
 const snap = await response.json();

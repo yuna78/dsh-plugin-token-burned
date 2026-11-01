@@ -3,7 +3,9 @@ import { readFile, writeFile, rename, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
 export const name = 'dsh-token-burned';
-export const inject = ['connection', 'sessionProjections'];
+// Only `connection` is used. Declaring `sessionProjections` bought nothing and
+// made this plugin mount differently from the routes that do work in this profile.
+export const inject = ['connection'];
 export const ROUTE = '/api/dsh-token-burned.snapshot';
 
 const DAY = 86400000;
@@ -196,15 +198,27 @@ export function apply(ctx) {
   };
   ctx.on?.('session/event', add);
 
-  ctx.inject?.(['connection'], (scope) => {
-    const dispose = scope.connection.fetch.register({ path: ROUTE, methods: ['GET'], fetch: async (request) => {
-      await ready;
-      let offset = null;
-      try { offset = clampOffset(new URL(request.url).searchParams.get('off')); } catch { offset = null; }
-      activeOffset = offset;
-      const snapshot = rebuild(offset);
-      return new Response(JSON.stringify(snapshot), { headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
-    } });
-    scope.effect(() => () => Promise.resolve(dispose?.()).catch(() => {}));
-  });
+  // Register on the connection service the Host actually hands to `apply`. A
+  // callback passed to `ctx.inject(deps, cb)` is never invoked, which left this
+  // route unregistered — the dock silently read whatever else owned the path.
+  const mount = (scope) => {
+    const dispose = scope.connection.fetch.register({
+      path: ROUTE,
+      methods: ['GET'],
+      // The Host's fetch registry rejects a request whose body handling was never
+      // declared with 400 before any handler runs; routes that work set this.
+      requestBody: 'buffered',
+      fetch: async (request) => {
+        await ready;
+        let offset = null;
+        try { offset = clampOffset(new URL(request.url).searchParams.get('off')); } catch { offset = null; }
+        activeOffset = offset;
+        const snapshot = rebuild(offset);
+        return new Response(JSON.stringify(snapshot), { headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
+      },
+    });
+    scope.effect?.(() => () => Promise.resolve(dispose?.()).catch(() => {}), 'token-burned: snapshot route');
+  };
+  if (ctx.connection?.fetch?.register) mount(ctx);
+  else ctx.inject?.(['connection'], mount);
 }
