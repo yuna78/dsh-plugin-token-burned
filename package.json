@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-token-burned",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "DSH floating Token Burn Dock with live burn rate, seven animated burn tiers, and timezone-correct hourly usage views",
   "type": "module",
   "main": "./index.js",

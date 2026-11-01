@@ -3,6 +3,17 @@
 本文件记录 `dsh-plugin-token-burned` 的版本变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.3.2] — 2026-11-01
+
+README 改成「宣传手册」风格；插件行为与 0.3.1 完全相同。
+
+### Changed
+
+- 首屏重构：`# Token 燃烧指数 · dsh-plugin-token-burned` + npm 版本/下载量/许可证三枚 badge + 真实运行时截图 + 一句 tagline（**把 Token 烧成可见的火。**）+ 安装 / 7 档火候 / 反馈 / English 的 CTA 行。
+- 「功能清单」改为收益导向的 **为什么值得装** 六条；展开面板细节收进 **面板里有什么**；结尾加一句号召。
+- 英文版补齐原本缺失的 `## Install` 与 `## Development`，与中文版结构对齐。
+- 档位阈值表、联系表与图注、数据说明 / 安装 / 开发 / 发版 全部保持不变（仅排版位置调整）。
+
 ## [0.3.1] — 2026-11-01
 
 文档与发布流程整理，插件行为与 0.3.0 相同。
