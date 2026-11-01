@@ -6,7 +6,7 @@
 
 > Expanded panel on the left; the collapsed capsule on the right. A real runtime screenshot, not a mockup.
 
-**Visible burning.**
+**Turn tokens into a fire you can see.**
 
 A floating Token Burn Index dock for DeepSeek Harness (DSH): every session's usage folded into one fire you can watch — one glance tells you how hot it is.
 
