@@ -1,32 +1,25 @@
-# dsh-plugin-token-burned
+# Token 燃烧指数 · dsh-plugin-token-burned
 
-![Token Burn Dock — real runtime screenshots](https://raw.githubusercontent.com/yuna78/dsh-plugin-token-burned/main/docs/preview-real.webp)
+![npm version](https://img.shields.io/npm/v/dsh-plugin-token-burned) ![npm downloads](https://img.shields.io/npm/dm/dsh-plugin-token-burned) ![license](https://img.shields.io/npm/l/dsh-plugin-token-burned)
 
-> 上图说明：左侧为展开面板，右侧为最小化胶囊。
+![Token 燃烧指数——展开面板与收起胶囊的真实运行时截图](https://raw.githubusercontent.com/yuna78/dsh-plugin-token-burned/main/docs/preview-real.webp)
 
-[English](README.en.md)
+> 左侧是展开面板，右侧是收起后的胶囊。真实运行时截图，不是渲染稿。
 
-> 把每一次模型调用变成可见的“热量”：看见谁在烧、什么时候烧、今天烧了多少。
+**看得见的燃烧。**
 
-[安装插件](https://github.com/yuna78/dsh-plugin-token-burned/releases/latest) · [提交反馈](https://github.com/yuna78/dsh-plugin-token-burned/issues)
+DSH 的悬浮 Token 燃烧指数 Dock：把全部 session 的用量汇成一撮会烧的火——烧得多旺，扫一眼就知道。
 
-DSH 的悬浮 Token 燃烧指数 Dock：把全部 session 的 Token 使用量汇总成一个轻量的实时面板。
+[安装](#安装) · [7 档火候](#火候档位) · [提交反馈](https://github.com/yuna78/dsh-plugin-token-burned/issues) · [English](README.en.md)
 
-## 功能
+## 为什么值得装
 
-- 收起胶囊：显示**当前火候档位**（星火 / 小火 / 中火 / 大火 / 烈火 / 火海 / 爆燃）或 `已熄灭`，附实时燃烧速率（含 `token/s` 单位）、**内嵌近 60 秒速率曲线**、今日总 Token
-- 实时速率来自轮询差值的 45 秒滑动窗口，并做指数平滑；余额不变时自然衰减到 0
-- 火焰分**7 档火候**：每档都是独立的 16 帧程序生成 SVG 序列，各有自己的配色、发光、闪烁速度与火舌布局，无图片资源
-- 配色随档位递进：蓝 → 青 → 靛/白 → 紫 → 品红 → 金
-- 火焰只在**有燃烧**时播放；没有新增燃烧时熄灭为静态灰色图标
-- 档位**升快降慢**（升约 0.3s、降约 0.9s），避免速率抖动时火焰反复跳档
-- 胶囊描边、火焰光晕与卡面光晕随档位染色；展开面板新增 **7 段火候进度条**与该档位的一句文案
-- 展开视图：按模型 / 按小时切换
-- 顶部 Hero：大号实时速率、相对日均的涨跌 chip、近 60 秒速率 sparkline
-- 图表带左侧纵轴刻度，刻度数值随数据最大值缓动**升高**，柱体高度平滑过渡
-- 近 30 天热力图按真实星期对齐，色阶按相对强度归一
-- LIVE / OFFLINE 状态、`prefers-reduced-motion` 支持（后者不播放帧，火焰定格在当前档位）
-- Dock 可拖动并保存位置；拖动超过 4px 不会误触展开
+- **一眼知道现在烧得多旺。** 收起胶囊直接显示当前火候档位（星火 → 爆燃）、实时 `token/s`、近 60 秒速率曲线和今日总量——不用展开、不用点开。
+- **七档火候，从一撮火苗烧到整面火墙。** 每档都是独立的 16 帧程序生成 SVG，各有配色、发光、闪烁速度与火舌布局，形态随档位从单苗小焰长成满宽火墙；全部由代码绘制，无图片资源。没在烧时，它熄灭成静态灰色图标。
+- **不抖、不跳档。** 升档快（约 0.3s）、落档慢（约 0.9s），速率小幅抖动时火焰稳稳停在当前档位。
+- **想深挖时，数据都在。** 展开后可按模型 / 按小时切换柱状图，左侧纵轴刻度随数据最大值缓动升高；另有近 30 天热力图与 7 段火候进度条。
+- **数字可信，重启不丢。** 跨 session 汇总所有可见 usage；日 / 小时按浏览器时区分桶；31 天记录原子落盘，重启不会清空历史。
+- **不打扰你。** Dock 可拖动并记住位置；`prefers-reduced-motion` 下不播放帧；纯本地读取 DSH 用量，不上传任何数据。
 
 ### 火候档位
 
@@ -50,6 +43,18 @@ DSH 的悬浮 Token 燃烧指数 Dock：把全部 session 的 Token 使用量汇
 
 > 联系表由 `npm run preview` 离线生成，直接调用真实 `client.js` 的绘图层；19px 是胶囊里的真实火焰尺寸（展开面板 34px），无图片资源。
 
+> 绝大多数时间，你看到的就是胶囊里 19px 的那一撮火——所以每一档都单独画了 16 帧。
+
+## 面板里有什么
+
+展开之后：
+
+- **Hero 区**：大号实时速率、相对日均的涨跌 chip、近 60 秒速率 sparkline。
+- **两个标签页**：按模型 / 按小时切换；柱状图带真实左侧纵轴刻度，刻度随数据最大值缓动升高，柱体高度平滑过渡。
+- **近 30 天热力图**：按真实星期对齐，色阶按相对强度归一。
+- **7 段火候进度条**：当前档位，配那一档的一句文案。
+- **LIVE / OFFLINE 状态**：正在烧还是已熄灭，面板上直接写清楚。
+
 ## 数据说明
 
 统计范围为当前 DSH Host 中可观察到的**全部 session**。数据来自 `assistant/message` 的 provider usage：输入、缓存读写和输出 Token。没有可用 usage 时不会伪造账单数据。
@@ -65,6 +70,8 @@ DSH 的悬浮 Token 燃烧指数 Dock：把全部 session 的 Token 使用量汇
 ```text
 dsh-plugin-token-burned
 ```
+
+装完刷新页面即可，无需重启。
 
 ## 开发
 
@@ -128,3 +135,7 @@ npm run backfill -- --write # 写基线文件，然后重启 DSH
 ## License
 
 MIT
+
+---
+
+装一个，下次下班前看看今天烧了多少。
