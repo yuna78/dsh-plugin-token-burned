@@ -24,28 +24,19 @@ A floating Token Burn Dock for DeepSeek Harness (DSH). It summarizes observable 
 
 ### Burn tiers
 
-The tier never looks at an absolute `token/s`. It looks at your **burn ratio relative to your own baseline**:
+Tiers are picked by **absolute `token/s` cut-offs** — the rate is stable and predictable: around 20k/s is 火海 (Inferno), and only 50k/s and up is 爆燃 (Detonation).
 
-```text
-burn ratio = live rate (token/s) ÷ personal baseline (token/s)
-baseline   = last-30-day total ÷ effective seconds
-effective seconds (today already has data) = (days with data − 1) × 86400 + seconds elapsed today
-effective seconds (today has no data yet)  = days with data × 86400
-```
+The live rate counts **all provider-usage tokens**: **input + cache read/write + output**. Cache reads usually dominate, so a normal coding session already runs at 10k–30k `token/s` — that is not an anomaly. 7 burning tiers plus `已熄灭`:
 
-When today has no data yet, today is not part of "days with data", so it is simply left out of the sum — subtracting the elapsed-time term there would count today's empty hours twice and inflate the baseline.
-
-So the tiers work for light and heavy users alike — nobody has to hard-code rate thresholds per user. 7 burning tiers plus `已熄灭`:
-
-| Tier | Burn ratio | Flame | One-liner |
+| Tier | Live rate (token/s) | Flame | One-liner |
 | --- | --- | --- | --- |
-| 1 星火 (Spark) | ≥ 0.06 | single small tongue, slow flicker | 一星火苗，刚点着 — a lone spark, just lit |
-| 2 小火 (Low) | ≥ 0.18 | tongue + inner core | 小火慢烧，稳稳的 — a low, steady burn |
-| 3 中火 (Medium) | ≥ 0.45 | twin outer tongues | 火势上来了 — it's building up |
-| 4 大火 (High) | ≥ 0.9 | three tongue layers + bright inner flame | 三丛火舌，呼呼作响 — three tongues roaring |
-| 5 烈火 (Blaze) | ≥ 1.8 | wide fire body + many tongues | 一团烈火，烧穿屏幕 — a blaze burning through the screen |
-| 6 火海 (Inferno) | ≥ 3.6 | three clusters + bottom fire wall + embers | 好多丛火，连成一片 — clusters merging into one |
-| 7 爆燃 (Detonation) | ≥ 7.5 | full-width fire wall + many tongues + embers | 整面火墙，全屏爆燃 — the whole screen detonates |
+| 1 星火 (Spark) | < 100 | single small tongue, slow flicker | 一星火苗，刚点着 — a lone spark, just lit |
+| 2 小火 (Low) | 100 – 500 | tongue + inner core | 小火慢烧，稳稳的 — a low, steady burn |
+| 3 中火 (Medium) | 500 – 2,000 | twin outer tongues | 火势上来了 — it's building up |
+| 4 大火 (High) | 2,000 – 3,000 | three tongue layers + bright inner flame | 三丛火舌，呼呼作响 — three tongues roaring |
+| 5 烈火 (Blaze) | 3,000 – 9,000 | wide fire body + many tongues | 一团烈火，烧穿屏幕 — a blaze burning through the screen |
+| 6 火海 (Inferno) | 9,000 – 50,000 | three clusters + bottom fire wall + embers | 好多丛火，连成一片 — clusters merging into one |
+| 7 爆燃 (Detonation) | ≥ 50,000 | full-width fire wall + many tongues + embers | 整面火墙，全屏爆燃 — the whole screen detonates |
 
 With no new burn it shows `已熄灭` (a static, desaturated icon).
 

@@ -5,7 +5,7 @@
  * `window.__ModuleLoader__.load({ id, factory })`，实现全在 factory 里。所以
  * 在 Node 里给一个 window 壳就能把模块「注册」下来，再给 factory 喂一个只有
  * hook 名字的 React 桩（本文件不渲染，只读 `__tbArt`），就能零依赖地验证艺术层：
- * 档位边界、基线换算、16 帧动画的合法性与缓存，以及 per-tier CSS 是否都在。
+ * 绝对速率阈值、16 帧动画的合法性与缓存，以及 per-tier CSS 是否都在。
  *
  * 运行：node verify/tiers.mjs（`npm test` 的一环）。
  */
@@ -17,8 +17,9 @@ import { fileURLToPath } from 'node:url';
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const DAY_MS = 86400000;
 const TIER_NAMES = ['星火', '小火', '中火', '大火', '烈火', '火海', '爆燃'];
-// 倍率阈值（live token/s ÷ 个人基线），档位 1..7 的下界；与产品规格一致。
-const TIER_MIN_RATIO = [0.06, 0.18, 0.45, 0.9, 1.8, 3.6, 7.5];
+// 绝对阈值（token/s），档位 1..7 的下界；与产品规格一致：
+// <100 星火 · 100-500 小火 · 500-2k 中火 · 2k-3k 大火 · 3k-9k 烈火 · 9k-50k 火海 · ≥50k 爆燃。
+const TIER_MIN_RATE = [0, 100, 500, 2000, 3000, 9000, 50000];
 const LAYERS = ['a', 'b', 'c', 'd', 'e'];
 
 /** 浏览器最小面：模块初始化时若碰了 document/localStorage 也不会炸。 */
@@ -233,13 +234,12 @@ const near = (a, b, tolerance = 1e-6) => Math.abs(a - b) <= Math.max(1e-6, Math.
 // ---------------------------------------------------------------------------
 
 function checkSurface(art) {
-  for (const key of ['TIERS', 'FRAME_COUNT', 'RISE_MS', 'FALL_MS', 'framesFor', 'idleFrame', 'embersFor', 'tierOf', 'burnBaseline', 'CSS']) {
+  for (const key of ['TIERS', 'FRAME_COUNT', 'RISE_MS', 'FALL_MS', 'framesFor', 'idleFrame', 'embersFor', 'tierOf', 'CSS']) {
     assert.ok(key in art, `__tbArt 缺少 ${key}`);
   }
   assert.ok(Array.isArray(art.TIERS), '__tbArt.TIERS 必须是数组');
   assert.equal(typeof art.framesFor, 'function');
   assert.equal(typeof art.tierOf, 'function');
-  assert.equal(typeof art.burnBaseline, 'function');
   assert.equal(typeof art.CSS, 'string');
   assert.equal(art.FRAME_COUNT, 16, 'FRAME_COUNT 必须是 16（一圈动画帧数）');
 }
@@ -257,10 +257,14 @@ function checkTierTable(art) {
     assert.match(tier.key, /^[a-z][a-z0-9_-]*$/, `${at} 的 key 应为小写标识符，收到 "${tier.key}"`);
     assert.equal(typeof tier.desc, 'string', `${at} 需要一句 fun copy`);
     assert.ok(tier.desc.trim().length >= 2, `${at} 的 desc 不能为空`);
-    assert.equal(typeof tier.minRatio, 'number', `${at} 的 minRatio 必须是数字`);
-    assert.ok(Number.isFinite(tier.minRatio), `${at} 的 minRatio 不能是 NaN/Infinity`);
-    assert.ok(near(tier.minRatio, TIER_MIN_RATIO[i], 1e-9),
-      `${at} 的 minRatio 应为 ${TIER_MIN_RATIO[i]}，收到 ${tier.minRatio}`);
+    assert.equal(typeof tier.minRate, 'number', `${at} 的 minRate 必须是数字（token/s）`);
+    assert.ok(Number.isFinite(tier.minRate), `${at} 的 minRate 不能是 NaN/Infinity`);
+    assert.equal(tier.minRate, TIER_MIN_RATE[i],
+      `${at} 的 minRate 应为 ${TIER_MIN_RATE[i]} token/s，收到 ${tier.minRate}`);
+    if (i > 0) {
+      assert.ok(tier.minRate > tiers[i - 1].minRate,
+        `${tier.name} 的 minRate 必须严格大于 ${tiers[i - 1].name}（阈值要单调递增）`);
+    }
     assert.equal(typeof tier.frameMs, 'number', `${at} 的 frameMs 必须是数字`);
     assert.ok(tier.frameMs >= 30 && tier.frameMs <= 400, `${at} 的 frameMs 应在 30..400ms，收到 ${tier.frameMs}`);
     // beat 是 CSS `animation-duration` 的毫秒值（呼吸感的周期），不是秒。
@@ -300,116 +304,52 @@ function checkTierTable(art) {
 
 function checkTierOf(art) {
   const tierOf = art.tierOf;
-  const levelOf = (r, b) => {
-    const lvl = tierOf(r, b);
+  const levelOf = (rate) => {
+    const lvl = tierOf(rate);
     assert.ok(Number.isInteger(lvl) && lvl >= 0 && lvl <= 7,
-      `tierOf(${r}, ${b}) 必须返回 0..7 的整数，收到 ${lvl}`);
+      `tierOf(${rate}) 必须返回 0..7 的整数，收到 ${lvl}`);
     return lvl;
   };
 
-  for (const baseline of [1, 128, 1500]) {
-    assert.equal(levelOf(0, baseline), 0, '没有燃烧时档位是 0（已熄灭）');
-  }
-  assert.equal(levelOf(-12, 128), 0, '负速率按已熄灭处理');
-  // 0.01 token/s 是噪声底：低于它即使基线极小（倍率够大）也算熄灭。
-  assert.equal(levelOf(0.01, 0.05), 0, '速率 <= 0.01 token/s 时不应点亮');
-  assert.equal(levelOf(0.01, 1), 0, '速率 <= 0.01 token/s 时不应点亮');
+  // 熄灭与噪声底：0.01 token/s 以下算没在烧。
+  assert.equal(levelOf(0), 0, '速率为 0 时是已熄灭');
+  assert.equal(levelOf(-12), 0, '负速率按已熄灭处理');
+  assert.equal(levelOf(0.01), 0, '速率 <= 0.01 token/s 时不应点亮');
+  assert.equal(levelOf(0.02), 1, '只要超过噪声底就至少是星火');
 
-  // 单调不减 + 值域受限 + 12× 基线必到爆燃。
-  for (const baseline of [0.6, 3, 42, 900]) {
-    let previous = 0;
-    for (let step = 0; step <= 600; step += 1) {
-      const rate = (step / 600) * baseline * 12;
-      const level = levelOf(rate, baseline);
-      assert.ok(level >= previous,
-        `tierOf 必须随速率单调不减：基线 ${baseline} 下 ${previous} -> ${level}`);
-      previous = level;
-    }
-    assert.equal(previous, 7, `12 倍基线的速率必须到 爆燃（基线 ${baseline}）`);
-  }
-
-  // 只看倍率：同比例放大速率与基线，档位不变。
-  for (const [rate, baseline] of [[3, 2], [60, 4], [1250, 40], [64000, 256]]) {
-    const expected = levelOf(rate, baseline);
-    assert.equal(levelOf(rate * 2, baseline * 2), expected, '放大 2 倍（速率与基线同步）不应改变档位');
-    assert.equal(levelOf(rate / 2, baseline / 2), expected, '缩小 2 倍（速率与基线同步）不应改变档位');
-    assert.equal(levelOf(rate * 100, baseline * 100), expected, '放大 100 倍不应改变档位');
-  }
-
-  // 阈值表：恰好在 minRatio 上进入该档，差一点就还是上一档。
-  const baseline = 8;
+  // 每档阈值：恰好在 minRate 上进档，差一点点还是上一档（星火下界是 0，无「上一档」）。
   art.TIERS.forEach((tier, i) => {
-    assert.equal(tierOf(baseline * tier.minRatio * (1 + 1e-9), baseline), tier.level,
-      `倍率 = ${tier.minRatio} 时应是 ${tier.name}`);
-    const justBelow = tierOf(baseline * tier.minRatio * 0.999, baseline);
-    assert.equal(justBelow, i === 0 ? 1 : tier.level - 1,
-      `倍率略小于 ${tier.minRatio} 时应停在 ${i === 0 ? tier.name : art.TIERS[i - 1].name}，收到 ${justBelow}`);
+    if (i === 0) {
+      // 星火的下界是 0（配合噪声底），所以「阈值」本身按熄灭算。
+      assert.equal(tier.minRate, 0, '星火的 minRate 必须是 0');
+      return;
+    }
+    assert.equal(tierOf(tier.minRate), tier.level, `速率 = ${tier.minRate} 时应是 ${tier.name}`);
+    assert.equal(tierOf(tier.minRate - 0.01), tier.level - 1,
+      `速率略小于 ${tier.minRate} 时应停在 ${art.TIERS[i - 1].name}`);
   });
 
-  // 只要还在燃烧就至少是星火，不能被夹到 0。
-  assert.equal(levelOf(0.02, 1e6), 1, '微弱但非零的燃烧应夹到星火（1）而不是熄灭');
+  // 用户给的锚点：20k token/s 是火海，50k 起才是爆燃。
+  assert.equal(levelOf(19999), 6, '20k token/s 应该是火海（6 档）');
+  assert.equal(levelOf(50000), 7, '50k token/s 应该到爆燃（7 档）');
+  assert.equal(levelOf(100000), 7, '更高只会停在爆燃，不再加档');
+
+  // 单调不减：0 → 200k 扫一遍，档位不能回退或跳号。
+  let previous = 0;
+  for (let step = 0; step <= 2000; step += 1) {
+    const rate = (step / 2000) * 200000;
+    const level = levelOf(rate);
+    assert.ok(level >= previous, `tierOf 必须随速率单调不减：${previous} -> ${level}（${rate} token/s）`);
+    previous = level;
+  }
+  assert.equal(previous, 7, '200k token/s 必须是爆燃');
 
   // 病态输入不能把 NaN 泄漏到 UI。
-  for (const [rate, baseline] of [[NaN, 1], [5, 0], [5, NaN], [Infinity, 1], [5, Infinity], [0.02, 0]]) {
-    levelOf(rate, baseline);
+  for (const rate of [NaN, undefined, null, 'abc', Infinity, -Infinity, {}]) {
+    levelOf(rate);
   }
-}
-
-function checkBurnBaseline(art) {
-  // 本地时间 13:30：当天已过 48600 秒（用本地日历算，测试本身不绑时区）。
-  const nowMs = new Date(2026, 10, 1, 13, 30, 0, 0).getTime();
-  const midnight = (ms) => {
-    const d = new Date(ms);
-    d.setHours(0, 0, 0, 0);
-    return d.getTime();
-  };
-  const elapsedSeconds = (ms) => Math.max(60, (ms - midnight(ms)) / 1000);
-  const snapshot = (days, today, recent30) => ({
-    today: today === undefined ? days[29] : today,
-    recent30: recent30 === undefined ? days.reduce((sum, v) => sum + v, 0) : recent30,
-    days,
-  });
-  const zeros = () => new Array(30).fill(0);
-
-  const empty = snapshot(zeros());
-  assert.equal(art.burnBaseline(empty, nowMs), 0, '没有任何数据时基线是 0');
-  assert.equal(art.burnBaseline({}, nowMs), 0, '空快照的基线是 0');
-
-  // 只有今天有数据：分母就是今天已经过去的秒数。
-  const today = 2240000;
-  const onlyToday = snapshot([...zeros().slice(0, 29), today]);
-  const todayBaseline = art.burnBaseline(onlyToday, nowMs);
-  assert.ok(Number.isFinite(todayBaseline) && todayBaseline > 0, '有数据时基线必须是正数');
-  assert.ok(near(todayBaseline, today / elapsedSeconds(nowMs)), 
-    `只有今天数据时基线 = 今日总量 / 已过秒数（收到 ${todayBaseline}）`);
-
-  // 多天数据：(有数据的天数 - 1) * 86400 + 今天已过秒数。
-  const days = [...zeros().slice(0, 27), 1000000, 1200000, today];
-  const multiBaseline = art.burnBaseline(snapshot(days), nowMs);
-  const expected = days.reduce((sum, v) => sum + v, 0) / (2 * 86400 + elapsedSeconds(nowMs));
-  assert.ok(near(multiBaseline, expected),
-    `最近 30 天有多天数据时基线 = 总量 / ((活跃天数-1)*86400 + 今日已过秒数)（收到 ${multiBaseline}，期望 ${expected}）`);
-
-  // 同一天越往后，基线越小（分母变大），这保证「今天刚开始」不会把基线算爆。
-  const later = art.burnBaseline(onlyToday, nowMs + 3600 * 1000);
-  assert.ok(later < todayBaseline, '同一天晚一小时，基线应更小');
-
-  // 午夜边界：分母有下限，不能除出 Infinity。
-  const justAfterMidnight = midnight(nowMs) + 1000;
-  const midnightBaseline = art.burnBaseline(onlyToday, justAfterMidnight);
-  assert.ok(Number.isFinite(midnightBaseline) && midnightBaseline > 0, '午夜刚过时基线仍必须是有限正数');
-
-  // 脏数据（host 老版本/坏 JSON）不能产出 NaN。
-  for (const weird of [
-    { recent30: 'abc', days: 'nope' },
-    { recent30: NaN, today: NaN, days: undefined },
-    { recent30: -5, today: -5, days: new Array(30).fill(-1) },
-    { days: new Array(7).fill(1), recent30: 7 },
-  ]) {
-    const value = art.burnBaseline(weird, nowMs);
-    assert.ok(Number.isFinite(value) && value >= 0,
-      `脏快照的基线必须是有限非负数，收到 ${value}`);
-  }
+  assert.equal(levelOf(NaN), 0, 'NaN 速率按已熄灭处理');
+  assert.equal(levelOf(Infinity), 7, 'Infinity 速率夹到爆燃');
 }
 
 function checkFrames(art) {
@@ -570,7 +510,6 @@ export function checkTiers(art) {
   checkSurface(art);
   checkTierTable(art);
   checkTierOf(art);
-  checkBurnBaseline(art);
   checkFrames(art);
   checkStateMachine(art);
   checkCss(art);

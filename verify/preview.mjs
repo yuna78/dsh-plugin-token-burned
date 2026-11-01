@@ -38,12 +38,13 @@ const PROFILE_ROOT = mkdtempSync(join(tmpdir(), 'tb-preview-chrome-'));
 let profileSeq = 0;
 
 // ---------------------------------------------------------------------------
-// mock 数据：一次「重度 agent 会话」的量级，且与 burnBaseline 自洽——
-// 今日 4.49M、近 30 天 192.8M、18 个活跃日 → 基线约 128 token/s；每档示例速率
-// = 基线 × 该档倍率（刚过阈值 25%），所以截图上的 Lv.N 与 tierOf() 一致（下面有自检）。
+// mock 数据：档位现在是**绝对实时速率**（token/s），和今天/近 30 天/个人基线都无关。
+// 所以每档直接给一个落在自己区间中段的代表速率（60 / 300 / 1,200 / 2,500 / 6,000 /
+// 20,000 / 80,000），截图上的 Lv.N 由 client.js 的 tierOf(rate) 现算并自检——阈值改了
+// 但这张表没跟上时，脚本会直接失败而不是画一张错的图。
 // ---------------------------------------------------------------------------
-// 「现在」钉死在今天 09:44（本地时区）：burnBaseline 的分母是「今天已过秒数」，
-// 用真实时钟的话，同一份 mock 会因截图时间不同算出不同基线，图上的速率就漂了。
+// 「现在」钉死在今天 09:44：只影响「今日已过秒数 → 今日均值」这一个展示值（卡内 chip），
+// 保证同一份 mock 在任何时刻截图都算出同一个 chip。
 const MOCK_NOW = (() => {
   const d = new Date();
   d.setHours(9, 44, 0, 0);
@@ -52,17 +53,14 @@ const MOCK_NOW = (() => {
 
 const MOCK = {
   today: 4492000,
-  recent30: 192800000,
-  activeDays: 18,
   // 今天已经过去的秒数：注意用真实时间差，不是钟面差（跨 DST 的一天可能 25 小时）。
   elapsedSeconds: (() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
     return (MOCK_NOW - d.getTime()) / 1000;
   })(),
-  now: MOCK_NOW,
-  // 每档展示用的倍率：刚过阈值 25%，保证落在该档中段。
-  ratioFor: (minRatio) => minRatio * 1.25,
+  // 每档一个代表速率（落在该档区间中段，避开边界值）。
+  rate: { 1: 60, 2: 300, 3: 1200, 4: 2500, 5: 6000, 6: 20000, 7: 80000 },
 };
 
 const round1 = (n) => Math.round(n * 10) / 10;
@@ -208,24 +206,19 @@ function offPillMarkup(art) {
     + '</button>';
 }
 
-/** 每档示例速率：基线 × 该档倍率（与 client.js 的 tierOf 自洽，脚本里会自检）。 */
+/** 今日均值：只用来算卡内「相对今日每秒平均」chip，不再参与定档。 */
 const mockDailyAvg = () => MOCK.today / MOCK.elapsedSeconds;
 
-function mockBaseline(art) {
-  return Number(art.burnBaseline({ recent30: MOCK.recent30, today: MOCK.today, days: mockDays() }, MOCK.now)) || 1;
-}
-
-function tierRate(art, tier) {
-  return mockBaseline(art) * MOCK.ratioFor(tier.minRatio);
-}
-
-function mockDays() {
-  // 18 个活跃日：最后 17 天里挑 17 天满额 + 今天按已过秒数折算；只为让
-  // burnBaseline 的「活跃天数」来自真实形状的数据，不参与展示。
-  const days = new Array(30).fill(0);
-  const perDay = MOCK.recent30 / ((MOCK.activeDays - 1) + MOCK.elapsedSeconds / 86400);
-  for (let i = 29 - (MOCK.activeDays - 1); i < 30; i += 1) days[i] = Math.round(perDay * (i === 29 ? MOCK.elapsedSeconds / 86400 : 1));
-  return days;
+/**
+ * 该档的绝对区间文案（左闭右开）。按 client.js 的 TIERS[i].minRate 现算，不写死：
+ * 阈值一改，表里的区间跟着变，而且 buildSheet 里会用 tierOf() 反过来验一遍。
+ */
+function rangeLabel(art, tier) {
+  const index = art.TIERS.findIndex((t) => t.level === tier.level);
+  const next = art.TIERS[index + 1];
+  if (!next) return `≥${fmtRate(tier.minRate)}`;
+  if (index === 0) return `<${fmtRate(next.minRate)}`;
+  return `${fmtRate(tier.minRate)}–${fmtRate(next.minRate)}`;
 }
 
 function historyFor(target, level) {
@@ -393,12 +386,12 @@ function sectionHeader(num, title, note) {
   return `<h2 class="sh-h2"><span>${num} ${title}</span>${note ? `<em>${note}</em>` : ''}</h2>`;
 }
 
-function headerMarkup(art, baseline, compact) {
+function headerMarkup(art, compact) {
   if (compact) {
     return `<header>
       <div class="sh-eyebrow">dsh-plugin-token-burned · verify/preview.mjs</div>
       <h1 class="sh-h1">1:1 真实视图 · <em>7 档火候</em></h1>
-      <p class="sh-lede">今日 ${fmt(MOCK.today)} · 近 30 天 ${fmt(MOCK.recent30)} · 基线 ${fmtRate(baseline)} token/s。
+      <p class="sh-lede">阈值是绝对速率（token/s）：&lt;100 · 100-500 · 500-2k · 2k-3k · 3k-9k · 9k-50k · ≥50k。
         下面是每条 pill 的 1:1 截图，DPR2 不缩小。</p>
     </header>`;
   }
@@ -408,8 +401,8 @@ function headerMarkup(art, baseline, compact) {
     <p class="sh-lede">用 <code>client.js</code> 里真实的 <code>__tbArt</code> 离线渲染：7 档 × 16 帧程序化 SVG，配上线上同一套
       <code>.tb-pill</code> / <code>.tb-hero</code> / <code>.tb-ladder</code> class 与 <code>art.CSS</code>，
       重点看 <b>19px（pill 内）</b>与 <b>34px（展开卡 hero 内）</b>这两个真实尺寸下七档是否还能区分。
-      Mock：live 速率按各档中段取值 · 今日 <b>${fmt(MOCK.today)}</b> · 近 30 天 <b>${fmt(MOCK.recent30)}</b> ·
-      个人基线 <b>${fmtRate(baseline)} token/s</b>（今日已过 ${Math.floor(MOCK.elapsedSeconds / 3600)}h${String(Math.round((MOCK.elapsedSeconds % 3600) / 60)).padStart(2, '0')}m · ${MOCK.activeDays} 个活跃日）。</p>
+      阈值：<b>绝对实时速率（token/s）</b>，&lt;100 · 100-500 · 500-2k · 2k-3k · 3k-9k · 9k-50k · ≥50k；mock 速率取各档中段值。
+      今日 <b>${fmt(MOCK.today)}</b> · 今日均值 <b>${fmtRate(mockDailyAvg())} token/s</b>（只用于卡内「相对今日均值」chip，不参与定档）。</p>
     <div class="sh-meta">art.CSS ${(art.CSS.length / 1024).toFixed(1)}KB · TIERS ${art.TIERS.length} · FRAME_COUNT ${art.FRAME_COUNT} · framesFor()/idleFrame()/embersFor() 与 CSS 均直接读自 client.js · RISE ${art.RISE_MS}ms / FALL ${art.FALL_MS}ms · 静态第 0 帧为默认展示帧</div>
   </header>`;
 }
@@ -450,8 +443,8 @@ function sectionFrames(art, rates) {
       <div class="sh-tierlabel">
         <div class="sh-badge"><span class="sh-lv">LV ${t.level}</span><span class="sh-name">${esc(t.name)}</span></div>
         <div class="sh-desc">${esc(t.desc)}</div>
-        <div class="sh-kv">阈值 ≥ <b>${t.minRatio}×</b> 基线 · 示例 <b>×${MOCK.ratioFor(t.minRatio).toFixed(3)}</b></div>
-        <div class="sh-kv">≈ <b>${fmtRate(rate)}</b> token/s · ${frames[0].length} path/帧</div>
+        <div class="sh-kv">区间 <b>${esc(rangeLabel(art, t))}</b> token/s</div>
+        <div class="sh-kv">示例 <b>${fmtRate(rate)}</b> token/s · ${frames[0].length} path/帧</div>
         <div class="sh-kv">${t.frameMs}ms/帧 · beat ${t.beat}ms · 余烬 ${t.sparks}</div>
       </div>
       <div class="sh-frames">${frameFigs}</div>
@@ -477,13 +470,16 @@ function sectionCards(art, rates) {
 
 function sectionTable(art, rates) {
   const rows = art.TIERS.map((t) => {
+    const level = art.tierOf(rates[t.level]);
+    if (level !== t.level) {
+      throw new Error(`④ 表自检失败：${t.name} 的示例速率 ${fmtRate(rates[t.level])} token/s 被 tierOf 判成 Lv.${level}（区间 ${rangeLabel(art, t)}）`);
+    }
     const palette = ['a', 'b', 'c', 'd', 'e', 'glow', 'edge']
       .map((slot) => `<i class="sh-swatch" style="background:${esc(t.palette[slot])}" title="palette.${slot} ${esc(t.palette[slot])}"></i>`).join('');
     return `<tr>
       <td>LV ${t.level} · ${esc(t.name)}</td>
       <td>${esc(t.desc)}</td>
-      <td class="num">≥${t.minRatio}×</td>
-      <td class="num">×${MOCK.ratioFor(t.minRatio).toFixed(3)}</td>
+      <td class="num">${esc(rangeLabel(art, t))}</td>
       <td class="num">${fmtRate(rates[t.level])}</td>
       <td class="num">${t.frameMs}ms</td>
       <td class="num">${t.beat}ms</td>
@@ -505,7 +501,7 @@ function sectionTable(art, rates) {
     </p>
     <table class="sh-table">
       <thead><tr>
-        <th>档位</th><th>文案</th><th>阈值</th><th>示例倍率</th><th>示例速率</th>
+        <th>档位</th><th>文案</th><th>绝对区间 token/s</th><th>示例速率</th>
         <th>帧间隔</th><th>呼吸 beat</th><th>余烬</th><th>19px 轮廓</th><th>palette a b c d e glow edge</th>
       </tr></thead>
       <tbody>${rows}</tbody>
@@ -516,7 +512,7 @@ function sectionTable(art, rates) {
 function sectionNative(art, rates) {
   const rows = art.TIERS.map((t) => `<div class="sh-natrow">
       ${pillMarkup(art, t, rates[t.level])}
-      <div class="sh-natcap"><b>Lv.${t.level} ${esc(t.name)}</b> · 倍率 ×${MOCK.ratioFor(t.minRatio).toFixed(2)}<br>阈值 ≥${t.minRatio}× 基线 · ${t.frameMs}ms/帧</div>
+      <div class="sh-natcap"><b>Lv.${t.level} ${esc(t.name)}</b> · 区间 ${esc(rangeLabel(art, t))} token/s<br>示例 ${fmtRate(rates[t.level])} token/s · ${t.frameMs}ms/帧</div>
     </div>`).join('');
   return `<section>
     ${sectionHeader('★', '1:1 真实视图', '480 CSS px 宽窄幅，DPR2 截图不缩小——这就是 Retina 用户看到的尺寸')}
@@ -532,7 +528,7 @@ function artHash(art) {
   hash.update(JSON.stringify([art.RISE_MS, art.FALL_MS, art.FRAME_COUNT]));
   hash.update(JSON.stringify(art.idleFrame())); // 熄火态也是艺术层，改了就该换 hash
   for (const tier of art.TIERS) {
-    hash.update(JSON.stringify([tier.level, tier.minRatio, tier.frameMs, tier.beat, tier.sparks, tier.palette]));
+    hash.update(JSON.stringify([tier.level, tier.minRate, tier.frameMs, tier.beat, tier.sparks, tier.palette]));
     hash.update(JSON.stringify(art.framesFor(tier.level)));
     hash.update(JSON.stringify(art.embersFor(tier.level)));
   }
@@ -547,15 +543,14 @@ function footerMarkup(art, compact) {
 }
 
 function buildSheet(art, opts = {}) {
-  const baseline = mockBaseline(art);
   const rates = {};
-  for (const tier of art.TIERS) rates[tier.level] = tierRate(art, tier);
+  for (const tier of art.TIERS) rates[tier.level] = MOCK.rate[tier.level];
 
   // 自检：mock 速率必须真的落在该档，否则截图上的「Lv.N」就是骗人的。
   for (const tier of art.TIERS) {
-    const level = art.tierOf(rates[tier.level], baseline);
+    const level = art.tierOf(rates[tier.level]);
     if (level !== tier.level) {
-      throw new Error(`mock 速率与档位不自洽：${tier.name} 期望 Lv.${tier.level}，tierOf 给出 ${level}（基线 ${baseline}，速率 ${rates[tier.level]}）`);
+      throw new Error(`mock 速率与档位不自洽：${tier.name}（区间 ${rangeLabel(art, tier)}）期望 Lv.${tier.level}，tierOf(${rates[tier.level]}) 给出 Lv.${level}`);
     }
   }
 
@@ -569,7 +564,7 @@ function buildSheet(art, opts = {}) {
   }
   if (only === 'native') sections.push(sectionNative(art, rates));
   const compact = !!opts.compact;
-  const body = headerMarkup(art, baseline, compact) + sections.join('') + footerMarkup(art, compact);
+  const body = headerMarkup(art, compact) + sections.join('') + footerMarkup(art, compact);
   return page({ art, body, title: opts.title || 'Token 燃烧指数 · 7 档火候联系表', width: opts.width || WIDTH });
 }
 
@@ -701,8 +696,30 @@ function main() {
 
   // 排版前先确认每一帧都是合法 path：非法 path 在浏览器里会整条不画，
   // 联系表可以「看起来没问题」，但线上渲染就是缺一块。
-  for (const name of ['framesFor', 'idleFrame', 'embersFor', 'tierOf', 'burnBaseline']) {
-    if (typeof art[name] !== 'function') throw new Error(`client.js 的 __tbArt 缺少 ${name}()：预览要复刻熄火态与余烬门槛`);
+  for (const name of ['framesFor', 'idleFrame', 'embersFor', 'tierOf']) {
+    if (typeof art[name] !== 'function') throw new Error(`client.js 的 __tbArt 缺少 ${name}()：预览要复刻熄火态、余烬门槛与绝对阈值`);
+  }
+
+  // 绝对阈值自检：档位不再是「相对个人基线的倍率」，而是 token/s 硬阈值。
+  // client.js 调了阈值/边界语义而本脚本没跟上时，在这里就失败，别画出一张骗人的图。
+  if (art.tierOf(0) !== 0) throw new Error(`tierOf(0) 应为 0（熄灭），实际 Lv.${art.tierOf(0)}`);
+  if (art.tierOf(0.02) !== 1) throw new Error(`tierOf(0.02) 应为 Lv.1（有正常流量就至少点亮星火），实际 Lv.${art.tierOf(0.02)}`);
+  for (const [index, tier] of art.TIERS.entries()) {
+    if (!Number.isFinite(tier.minRate)) throw new Error(`TIERS[${index}] 缺少数字型 minRate（绝对阈值 token/s）`);
+    const level = art.tierOf(tier.minRate);
+    const below = art.tierOf(tier.minRate - 0.01);
+    if (index === 0) {
+      if (tier.minRate !== 0) throw new Error(`Lv.1 的 minRate 应为 0，实际 ${tier.minRate}`);
+      continue; // minRate 0 属于「熄灭↔点亮」边界，上面两行已单独验
+    }
+    if (!(tier.minRate > art.TIERS[index - 1].minRate)) {
+      throw new Error(`TIERS 的 minRate 必须严格递增：Lv.${tier.level} = ${tier.minRate}，Lv.${art.TIERS[index - 1].level} = ${art.TIERS[index - 1].minRate}`);
+    }
+    if (level !== tier.level) throw new Error(`阈值边界自检失败：tierOf(${tier.minRate}) 应为 Lv.${tier.level}，实际 Lv.${level}`);
+    if (below !== tier.level - 1) throw new Error(`阈值左边界自检失败：tierOf(${tier.minRate - 0.01}) 应为 Lv.${tier.level - 1}，实际 Lv.${below}`);
+    if (art.tierOf(MOCK.rate[tier.level]) !== tier.level) {
+      throw new Error(`mock 代表速率 ${MOCK.rate[tier.level]} token/s 不在 Lv.${tier.level}（${rangeLabel(art, tier)}）区间内`);
+    }
   }
   for (const tier of art.TIERS) {
     for (const [frameIndex, frame] of art.framesFor(tier.level).entries()) {
@@ -752,6 +769,8 @@ function main() {
   console.log(`  @19px:     ${sizes(19)}`);
   console.log(`  @34px:     ${sizes(34)}`);
   console.log(`  @off:      已熄灭 ${idleSizeLabel(art, 19)} @19px · ${idleSizeLabel(art, 34)} @34px（idleFrame，无余烬）`);
+  console.log(`  ladder:    ${art.TIERS.map((t) => rangeLabel(art, t)).join(' · ')} token/s（绝对速率，与历史/基线无关）`);
+  console.log(`  @rates:    ${art.TIERS.map((t) => `${t.name} ${fmtRate(MOCK.rate[t.level])}`).join(' · ')} token/s`);
 }
 
 try {

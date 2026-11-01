@@ -19,7 +19,6 @@ window.__ModuleLoader__.load({
     const FIRE_VB = '0 0 64 96';
     const FIRE_BASE = 94;
     const LIVE_EPSILON = 0.01;
-    const DAY_SECONDS = 86400;
     // Tier hysteresis: flare up fast, cool down slowly.
     const RISE_MS = 280;
     const FALL_MS = 900;
@@ -27,9 +26,11 @@ window.__ModuleLoader__.load({
     // only drawn in the expanded card's hero flame, not in the 19px capsule.
     const MIN_EMBER_WIDTH = 24;
 
-    // Seven burn tiers. The level comes from a *relative* ratio (live token/s ÷
-    // the viewer's own 30-day baseline), so a light user and a heavy user both
-    // get the whole ladder instead of one fixed token/s scale.
+    // Seven burn tiers, picked by the live token/s rate itself (absolute
+    // cut-offs, not a ratio): the rate already sums input + cache read/write +
+    // output, so a normal "cache-heavy" coding session sits around 5-30k
+    // token/s and only a real burst reaches 50k+. Cut-offs:
+    //   <100 · 100-500 · 500-2k · 2k-3k · 3k-9k · 9k-50k · ≥50k token/s
     //
     // Each tier is its own 16-frame procedural sequence with its own palette,
     // glow, flicker speed and tongue layout — that is the fun part:
@@ -43,7 +44,7 @@ window.__ModuleLoader__.load({
     const TIERS = [
       {
         level: 1, key: 'spark', name: '星火', desc: '一星火苗，刚点着',
-        minRatio: 0.06, frameMs: 110, beat: 2600, sparks: 0,
+        minRate: 0, frameMs: 110, beat: 2600, sparks: 0,
         palette: { a: '#1e40af', b: '#1d4ed8', c: '#2563eb', d: '#7dd3fc', e: '#e0f2fe', glow: '#2563eb', glow2: '#1d4ed8', edge: '#3b82f6a0' },
         shapes: [
           { kind: 'tongue', layer: 'a', cx: 32, hw: 9, ht: 30, amp: 2.4, jitter: 1.2, phase: 0.02, bulge: 1.1 },
@@ -53,7 +54,7 @@ window.__ModuleLoader__.load({
       },
       {
         level: 2, key: 'ember', name: '小火', desc: '小火慢烧，稳稳的',
-        minRatio: 0.18, frameMs: 95, beat: 2400, sparks: 0,
+        minRate: 100, frameMs: 95, beat: 2400, sparks: 0,
         palette: { a: '#1d4ed8', b: '#3b82f6', c: '#7dd3fc', d: '#bae6fd', e: '#f0f9ff', glow: '#60a5fa', glow2: '#3b82f6', edge: '#60a5faa0' },
         shapes: [
           { kind: 'tongue', layer: 'a', cx: 32, hw: 11, ht: 40, amp: 2.6, jitter: 1.4, phase: 0.03, bulge: 1.12 },
@@ -64,7 +65,7 @@ window.__ModuleLoader__.load({
       },
       {
         level: 3, key: 'blaze', name: '中火', desc: '火势上来了',
-        minRatio: 0.45, frameMs: 80, beat: 2100, sparks: 0,
+        minRate: 500, frameMs: 80, beat: 2100, sparks: 0,
         palette: { a: '#1d4ed8', b: '#3b82f6', c: '#22d3ee', d: '#67e8f9', e: '#f0fdff', glow: '#22d3ee', glow2: '#3b82f6', edge: '#22d3eea0' },
         shapes: [
           { kind: 'tongue', layer: 'a', cx: 32, hw: 14, ht: 52, amp: 3, jitter: 1.6, phase: 0.02, bulge: 1.12 },
@@ -76,7 +77,7 @@ window.__ModuleLoader__.load({
       },
       {
         level: 4, key: 'flame', name: '大火', desc: '三丛火舌，呼呼作响',
-        minRatio: 0.9, frameMs: 68, beat: 1900, sparks: 0,
+        minRate: 2000, frameMs: 68, beat: 1900, sparks: 0,
         palette: { a: '#3730a3', b: '#4f46e5', c: '#22d3ee', d: '#a5f3fc', e: '#ffffff', glow: '#38bdf8', glow2: '#4f46e5', edge: '#38bdf8b0' },
         shapes: [
           { kind: 'tongue', layer: 'a', cx: 32, hw: 19, ht: 62, amp: 3.4, jitter: 1.8, phase: 0.01, bulge: 1.14 },
@@ -89,7 +90,7 @@ window.__ModuleLoader__.load({
       },
       {
         level: 5, key: 'inferno', name: '烈火', desc: '一团烈火，烧穿屏幕',
-        minRatio: 1.8, frameMs: 58, beat: 1600, sparks: 0,
+        minRate: 3000, frameMs: 58, beat: 1600, sparks: 0,
         palette: { a: '#4c1d95', b: '#7c3aed', c: '#a78bfa', d: '#e9d5ff', e: '#ffffff', glow: '#a78bfa', glow2: '#6d28d9', edge: '#a78bfab0' },
         shapes: [
           { kind: 'tongue', layer: 'a', cx: 32, hw: 12, ht: 72, amp: 3.2, jitter: 1.4, phase: 0.02, bulge: 1.15 },
@@ -103,7 +104,7 @@ window.__ModuleLoader__.load({
       },
       {
         level: 6, key: 'sea', name: '火海', desc: '好多丛火，连成一片',
-        minRatio: 3.6, frameMs: 48, beat: 1300, sparks: 5,
+        minRate: 9000, frameMs: 48, beat: 1300, sparks: 5,
         palette: { a: '#831843', b: '#be185d', c: '#f472b6', d: '#fbcfe8', e: '#ffffff', glow: '#f472b6', glow2: '#be185d', edge: '#f472b6b0' },
         shapes: [
           { kind: 'wall', layer: 'a', x0: 1, x1: 63, ht: 25, amp: 2.6, jitter: 1.4, phase: 0.05 },
@@ -121,7 +122,7 @@ window.__ModuleLoader__.load({
       },
       {
         level: 7, key: 'blast', name: '爆燃', desc: '整面火墙，全屏爆燃',
-        minRatio: 7.5, frameMs: 40, beat: 1000, sparks: 8,
+        minRate: 50000, frameMs: 40, beat: 1000, sparks: 8,
         palette: { a: '#92400e', b: '#f59e0b', c: '#fbbf24', d: '#fde68a', e: '#ffffff', glow: '#fbbf24', glow2: '#f59e0b', edge: '#fbbf24c0' },
         shapes: [
           { kind: 'wall', layer: 'a', x0: 0, x1: 64, ht: 72, amp: 3, jitter: 1.8, phase: 0.02 },
@@ -187,7 +188,7 @@ window.__ModuleLoader__.load({
       .tb-hot{display:inline-block;min-width:34px;color:#9fb4d0;font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;white-space:nowrap}
       .tb-pill[data-burning="on"] .tb-hot{color:#a9ecff}
       .tb-rate{display:inline-flex;align-items:baseline;gap:3px;font-variant-numeric:tabular-nums;white-space:nowrap}
-      .tb-rate b{display:inline-block;min-width:36px;text-align:right;font-size:15px;font-weight:800;color:#f4f8ff;letter-spacing:-.02em}
+      .tb-rate b{display:inline-block;min-width:52px;text-align:right;font-size:15px;font-weight:800;color:#f4f8ff;letter-spacing:-.02em}
       .tb-unit{font-size:9px;font-weight:700;color:#7f96b5}
       .tb-sep{width:1px;height:18px;background:#ffffff1c;flex:0 0 auto}
       .tb-group{display:inline-flex;align-items:baseline;gap:5px;white-space:nowrap;min-width:0}
@@ -459,35 +460,15 @@ window.__ModuleLoader__.load({
       return frames;
     }
 
-    // The viewer's own "normal" burn rate, in token/s. Dividing by it (instead
-    // of using absolute token/s cut-offs) keeps the ladder useful for a light
-    // user and a heavy user alike. Today counts only the seconds elapsed so
-    // far, otherwise a fresh install would look 100x hotter than it is.
-    function burnBaseline(snapshot, nowMs) {
-      const snap = snapshot || {};
-      const total30 = Number(snap.recent30) || 0;
-      if (!(total30 > 0)) return 0;
-      const days = Array.isArray(snap.days) ? snap.days.map((v) => Number(v) || 0) : [];
-      const active = days.filter((v) => v > 0).length;
-      const at = Number(nowMs) || Date.now();
-      const dayStart = new Date(at);
-      dayStart.setHours(0, 0, 0, 0);
-      const elapsed = Math.max(60, (at - dayStart.getTime()) / 1000);
-      const todayKnown = days.length > 0 && days[days.length - 1] > 0;
-      // Today only has `elapsed` seconds of history, so it must not be counted
-      // as a full day or the baseline would be muted by the rest of the day.
-      const seconds = Math.max(60, active * DAY_SECONDS - (todayKnown ? DAY_SECONDS - elapsed : 0));
-      return total30 / seconds;
-    }
-
-    function tierOf(rate, baseline) {
+    // Absolute cut-offs keep the ladder boringly predictable: whatever the
+    // history looks like, 20k token/s always shows 火海 and 50k+ shows 爆燃.
+    // TIERS[0].minRate is 0, so any non-noise rate lights at least 星火.
+    function tierOf(rate) {
       const value = Number(rate);
       if (!(value > LIVE_EPSILON)) return 0;
-      const base = Math.max(Number(baseline) || 0, 0.5);
-      const ratio = value / base;
       let level = 1;
       for (let i = 0; i < TIERS.length; i += 1) {
-        if (ratio >= TIERS[i].minRatio) level = TIERS[i].level;
+        if (value >= TIERS[i].minRate) level = TIERS[i].level;
       }
       return level;
     }
@@ -513,8 +494,8 @@ window.__ModuleLoader__.load({
 
     // Fire flares up quickly and cools down slowly, so a short burst reads as a
     // flare instead of the dock slamming between levels on every poll.
-    function useTier(rate, baseline) {
-      const target = tierOf(rate, baseline);
+    function useTier(rate) {
+      const target = tierOf(rate);
       const [tier, setTier] = useState(target);
       useEffect(() => {
         if (target === tier) return undefined;
@@ -702,12 +683,9 @@ window.__ModuleLoader__.load({
       const seconds = Math.max(60, (now - dayStart.getTime()) / 1000);
       const dailyAvg = total / seconds;
       const liveRate = rate > LIVE_EPSILON ? rate : (primed ? 0 : dailyAvg);
-      // Burn tier: relative to the viewer's own 30-day baseline so the whole
-      // ladder stays reachable whether they burn 50 or 200k token/s.
-      const baseline = burnBaseline(snapshot, now);
       // Before the first few polls `liveRate` falls back to today's average, which
       // is fine for the number but would invent a burning tier on every reload.
-      const tier = useTier(primed ? liveRate : 0, baseline);
+      const tier = useTier(primed ? liveRate : 0);
       const burning = tier > 0;
       const tierInfo = burning ? TIERS[tier - 1] : null;
       // Huge ratios (a burst against a whole-day average) are meaningless as a
@@ -876,7 +854,7 @@ window.__ModuleLoader__.load({
     return {
       apply,
       inject: ['slots'],
-      __tbArt: { TIERS, FRAME_COUNT, RISE_MS, FALL_MS, framesFor, idleFrame: () => IDLE_FRAME, embersFor, tierOf, burnBaseline, CSS },
+      __tbArt: { TIERS, FRAME_COUNT, RISE_MS, FALL_MS, framesFor, idleFrame: () => IDLE_FRAME, embersFor, tierOf, CSS },
     };
   },
 });
