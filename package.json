@@ -42,8 +42,6 @@
     "README.md",
     "README.en.md",
     "CHANGELOG.md",
-    "docs/preview-real.webp",
-    "docs/preview-tiers.webp",
     "LICENSE",
     "package.json"
   ],
@@ -51,7 +49,7 @@
     "test": "node verify/smoke.mjs && node verify/baseline.mjs && node verify/tiers.mjs",
     "hours": "node verify/hours.mjs",
     "backfill": "node verify/backfill.mjs",
-    "prepublishOnly": "node verify/smoke.mjs",
+    "prepublishOnly": "npm test",
     "preview": "node verify/preview.mjs"
   },
   "dsh": {
