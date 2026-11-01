@@ -3,6 +3,14 @@
 本文件记录 `dsh-plugin-token-burned` 的版本变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.3.3] — 2026-11-01
+
+### Fixed
+
+- 总量数字的自动单位补上 **B 档**：超过 1000M 显示为 `x.xxB`（如近 30 天 `31.01B`），
+  不再出现 `31012.01M` 这种四位数。单位阶梯为 K → M → B，M 仍是统计行里实际看到的最小单位，
+  K 只出现在 <1M 的小数值（图表刻度、tooltip）。`__tbArt` 现导出 `fmt` 供测试。
+
 ## [0.3.2] — 2026-11-01
 
 README 改成「宣传手册」风格；插件行为与 0.3.1 完全相同。

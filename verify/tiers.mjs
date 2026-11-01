@@ -234,7 +234,7 @@ const near = (a, b, tolerance = 1e-6) => Math.abs(a - b) <= Math.max(1e-6, Math.
 // ---------------------------------------------------------------------------
 
 function checkSurface(art) {
-  for (const key of ['TIERS', 'FRAME_COUNT', 'RISE_MS', 'FALL_MS', 'framesFor', 'idleFrame', 'embersFor', 'tierOf', 'CSS']) {
+  for (const key of ['TIERS', 'FRAME_COUNT', 'RISE_MS', 'FALL_MS', 'framesFor', 'idleFrame', 'embersFor', 'tierOf', 'fmt', 'CSS']) {
     assert.ok(key in art, `__tbArt 缺少 ${key}`);
   }
   assert.ok(Array.isArray(art.TIERS), '__tbArt.TIERS 必须是数组');
@@ -350,6 +350,34 @@ function checkTierOf(art) {
   }
   assert.equal(levelOf(NaN), 0, 'NaN 速率按已熄灭处理');
   assert.equal(levelOf(Infinity), 7, 'Infinity 速率夹到爆燃');
+}
+
+
+/**
+ * 总量单位阶梯 K -> M -> B：B 档在 1000M 处接管。近 30 天会到几十 B，之前
+ * 没有 B 档时会显示成 "31012.01M" 这种四位数。
+ */
+function checkFormatting(art) {
+  const fmt = art.fmt;
+  assert.equal(typeof fmt, 'function', '__tbArt 需要导出 fmt');
+  const cases = [
+    [0, '0', '零值'],
+    [421, '421', '小数值保持原样（图表刻度/tooltip 用）'],
+    [12340, '12.3K', 'K 档只服务 <1M 的小数值'],
+    [309720000, '309.72M', 'M 档两位小数'],
+    [1e9, '1.00B', '1000M 起进 B 档'],
+    [31012010000, '31.01B', '近 30 天真实量级'],
+    [3.1012e10, '31.01B', '同上（科学计数法输入）'],
+  ];
+  for (const [value, want, why] of cases) {
+    assert.equal(fmt(value), want, `fmt(${value}) 应为 "${want}"（${why}）`);
+  }
+  // 整条阶梯上不允许出现 4 位整数（"1000.00M"/"1000.0K" 这种）。
+  for (let v = 1e6; v <= 1e11; v = Math.floor(v * 1.37) + 1) {
+    const out = fmt(v);
+    assert.match(out, /^\d+(?:\.\d+)?(?:K|M|B)?$/, `fmt(${v}) = "${out}" 格式不对`);
+    assert.ok(parseFloat(out) < 1000, `fmt(${v}) = "${out}" 出现了 4 位整数`);
+  }
 }
 
 function checkFrames(art) {
@@ -510,6 +538,7 @@ export function checkTiers(art) {
   checkSurface(art);
   checkTierTable(art);
   checkTierOf(art);
+  checkFormatting(art);
   checkFrames(art);
   checkStateMachine(art);
   checkCss(art);

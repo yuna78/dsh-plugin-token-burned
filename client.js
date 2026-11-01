@@ -268,8 +268,12 @@ window.__ModuleLoader__.load({
       return Math.round(n * 10) / 10;
     }
 
+    // Token totals climb into the billions fast (31B for a heavy month), so the
+    // unit ladder is K -> M -> B: B kicks in at 1000M, below that M is the floor
+    // users actually see in the stats row. Rates use fmtRate instead.
     function fmt(n) {
       const v = Number(n) || 0;
+      if (v >= 1e9) return (v / 1e9).toFixed(2) + 'B';
       if (v >= 1e6) return (v / 1e6).toFixed(2) + 'M';
       if (v >= 1e3) return (v / 1e3).toFixed(1) + 'K';
       return String(Math.round(v));
@@ -854,7 +858,7 @@ window.__ModuleLoader__.load({
     return {
       apply,
       inject: ['slots'],
-      __tbArt: { TIERS, FRAME_COUNT, RISE_MS, FALL_MS, framesFor, idleFrame: () => IDLE_FRAME, embersFor, tierOf, CSS },
+      __tbArt: { TIERS, FRAME_COUNT, RISE_MS, FALL_MS, framesFor, idleFrame: () => IDLE_FRAME, embersFor, tierOf, fmt, CSS },
     };
   },
 });
