@@ -11,13 +11,155 @@ window.__ModuleLoader__.load({
     const STORE = 'dsh-token-burned.pos';
     const ENDPOINT = '/api/dsh-token-burned.snapshot';
     const POLL_MS = 1000;
-    const FRAME_MS = 70;
     const FRAME_COUNT = 16;
     const HISTORY = 60;
     const WEEK = ['日', '一', '二', '三', '四', '五', '六'];
     const PALETTE = ['#66e3ff', '#a78bfa', '#5eead4', '#f0abfc', '#fbbf24'];
     const FALLBACK_MODELS = ['DeepSeek V3', 'Claude Sonnet', 'GPT-5', 'Gemini Pro'];
     const FIRE_VB = '0 0 64 96';
+    const FIRE_BASE = 94;
+    const LIVE_EPSILON = 0.01;
+    const DAY_SECONDS = 86400;
+    // Tier hysteresis: flare up fast, cool down slowly.
+    const RISE_MS = 280;
+    const FALL_MS = 900;
+    // Embers below this rendered width turn into 1px speckle noise, so they are
+    // only drawn in the expanded card's hero flame, not in the 19px capsule.
+    const MIN_EMBER_WIDTH = 24;
+
+    // Seven burn tiers. The level comes from a *relative* ratio (live token/s ÷
+    // the viewer's own 30-day baseline), so a light user and a heavy user both
+    // get the whole ladder instead of one fixed token/s scale.
+    //
+    // Each tier is its own 16-frame procedural sequence with its own palette,
+    // glow, flicker speed and tongue layout — that is the fun part:
+    //   1 星火  one tiny tongue, slow flicker
+    //   2 小火  one tongue + hot core
+    //   3 中火  two tongues (main + side), brighter
+    //   4 大火  three tongues + white-hot inner flame
+    //   5 烈火  one broad rounded fire mass with tongues ("一团火")
+    //   6 火海  several separate clusters along a fire base ("好多丛火")
+    //   7 爆燃  full-width fire wall, many tongues + rising embers
+    const TIERS = [
+      {
+        level: 1, key: 'spark', name: '星火', desc: '一星火苗，刚点着',
+        minRatio: 0.06, frameMs: 110, beat: 2600, sparks: 0,
+        palette: { a: '#1e40af', b: '#1d4ed8', c: '#2563eb', d: '#7dd3fc', e: '#e0f2fe', glow: '#2563eb', glow2: '#1d4ed8', edge: '#3b82f6a0' },
+        shapes: [
+          { kind: 'tongue', layer: 'a', cx: 32, hw: 9, ht: 30, amp: 2.4, jitter: 1.2, phase: 0.02, bulge: 1.1 },
+          { kind: 'tongue', layer: 'c', cx: 32, hw: 5.5, ht: 21, amp: 2.8, jitter: 1, phase: 0.12, bulge: 1.05 },
+          { kind: 'tongue', layer: 'e', cx: 32, hw: 3.4, ht: 12, amp: 1.8, jitter: 0.7, phase: 0.3, bulge: 1 },
+        ],
+      },
+      {
+        level: 2, key: 'ember', name: '小火', desc: '小火慢烧，稳稳的',
+        minRatio: 0.18, frameMs: 95, beat: 2400, sparks: 0,
+        palette: { a: '#1d4ed8', b: '#3b82f6', c: '#7dd3fc', d: '#bae6fd', e: '#f0f9ff', glow: '#60a5fa', glow2: '#3b82f6', edge: '#60a5faa0' },
+        shapes: [
+          { kind: 'tongue', layer: 'a', cx: 32, hw: 11, ht: 40, amp: 2.6, jitter: 1.4, phase: 0.03, bulge: 1.12 },
+          { kind: 'tongue', layer: 'b', cx: 43, hw: 4.5, ht: 20, amp: 2.2, jitter: 1, phase: 0.4, bulge: 1.1 },
+          { kind: 'tongue', layer: 'c', cx: 31, hw: 7.5, ht: 31, amp: 3, jitter: 1.2, phase: 0.18, bulge: 1.05 },
+          { kind: 'tongue', layer: 'e', cx: 32, hw: 3.5, ht: 15, amp: 1.8, jitter: 0.8, phase: 0.35, bulge: 1 },
+        ],
+      },
+      {
+        level: 3, key: 'blaze', name: '中火', desc: '火势上来了',
+        minRatio: 0.45, frameMs: 80, beat: 2100, sparks: 0,
+        palette: { a: '#1d4ed8', b: '#3b82f6', c: '#22d3ee', d: '#67e8f9', e: '#f0fdff', glow: '#22d3ee', glow2: '#3b82f6', edge: '#22d3eea0' },
+        shapes: [
+          { kind: 'tongue', layer: 'a', cx: 32, hw: 14, ht: 52, amp: 3, jitter: 1.6, phase: 0.02, bulge: 1.12 },
+          { kind: 'tongue', layer: 'b', cx: 16, hw: 5.5, ht: 30, amp: 2.6, jitter: 1.2, phase: 0.45, bulge: 1.1 },
+          { kind: 'tongue', layer: 'b', cx: 50, hw: 4.5, ht: 20, amp: 2, jitter: 1.1, phase: 0.7, bulge: 1.1 },
+          { kind: 'tongue', layer: 'c', cx: 32, hw: 10, ht: 61, amp: 3.4, jitter: 1.4, phase: 0.15, bulge: 1.06 },
+          { kind: 'tongue', layer: 'e', cx: 32, hw: 5, ht: 28, amp: 2, jitter: 0.9, phase: 0.32, bulge: 1 },
+        ],
+      },
+      {
+        level: 4, key: 'flame', name: '大火', desc: '三丛火舌，呼呼作响',
+        minRatio: 0.9, frameMs: 68, beat: 1900, sparks: 0,
+        palette: { a: '#3730a3', b: '#4f46e5', c: '#22d3ee', d: '#a5f3fc', e: '#ffffff', glow: '#38bdf8', glow2: '#4f46e5', edge: '#38bdf8b0' },
+        shapes: [
+          { kind: 'tongue', layer: 'a', cx: 32, hw: 19, ht: 62, amp: 3.4, jitter: 1.8, phase: 0.01, bulge: 1.14 },
+          { kind: 'tongue', layer: 'b', cx: 11, hw: 7.5, ht: 46, amp: 3, jitter: 1.4, phase: 0.5, bulge: 1.12 },
+          { kind: 'tongue', layer: 'b', cx: 53, hw: 7.5, ht: 42, amp: 2.8, jitter: 1.4, phase: 0.78, bulge: 1.12 },
+          { kind: 'tongue', layer: 'c', cx: 32, hw: 16, ht: 70, amp: 3.8, jitter: 1.6, phase: 0.12, bulge: 1.06 },
+          { kind: 'tongue', layer: 'd', cx: 32, hw: 9, ht: 46, amp: 2.6, jitter: 1, phase: 0.28, bulge: 1.02 },
+          { kind: 'tongue', layer: 'e', cx: 32, hw: 6, ht: 30, amp: 2, jitter: 0.9, phase: 0.4, bulge: 1 },
+        ],
+      },
+      {
+        level: 5, key: 'inferno', name: '烈火', desc: '一团烈火，烧穿屏幕',
+        minRatio: 1.8, frameMs: 58, beat: 1600, sparks: 0,
+        palette: { a: '#4c1d95', b: '#7c3aed', c: '#a78bfa', d: '#e9d5ff', e: '#ffffff', glow: '#a78bfa', glow2: '#6d28d9', edge: '#a78bfab0' },
+        shapes: [
+          { kind: 'tongue', layer: 'a', cx: 32, hw: 12, ht: 72, amp: 3.2, jitter: 1.4, phase: 0.02, bulge: 1.15 },
+          { kind: 'blob', layer: 'b', cx: 31, hw: 25, ht: 54, amp: 3, jitter: 1.5, phase: 0.08, bulge: 1.12 },
+          { kind: 'tongue', layer: 'c', cx: 11, hw: 8.5, ht: 50, amp: 3.2, jitter: 1.4, phase: 0.45, bulge: 1.15 },
+          { kind: 'tongue', layer: 'c', cx: 52, hw: 8.5, ht: 46, amp: 3, jitter: 1.4, phase: 0.72, bulge: 1.15 },
+          { kind: 'tongue', layer: 'd', cx: 30, hw: 10, ht: 62, amp: 3.2, jitter: 1.2, phase: 0.2, bulge: 1.06 },
+          { kind: 'tongue', layer: 'd', cx: 38, hw: 7, ht: 44, amp: 2.6, jitter: 1.1, phase: 0.34, bulge: 1.04 },
+          { kind: 'tongue', layer: 'e', cx: 33, hw: 7, ht: 34, amp: 2.4, jitter: 0.9, phase: 0.38, bulge: 1 },
+        ],
+      },
+      {
+        level: 6, key: 'sea', name: '火海', desc: '好多丛火，连成一片',
+        minRatio: 3.6, frameMs: 48, beat: 1300, sparks: 5,
+        palette: { a: '#831843', b: '#be185d', c: '#f472b6', d: '#fbcfe8', e: '#ffffff', glow: '#f472b6', glow2: '#be185d', edge: '#f472b6b0' },
+        shapes: [
+          { kind: 'wall', layer: 'a', x0: 1, x1: 63, ht: 25, amp: 2.6, jitter: 1.4, phase: 0.05 },
+          { kind: 'wall', layer: 'b', x0: 6, x1: 58, ht: 17, amp: 2.2, jitter: 1.2, phase: 0.2 },
+          { kind: 'tongue', layer: 'b', cx: 12, hw: 6, ht: 46, amp: 2.8, jitter: 1.4, phase: 0.1, bulge: 1.1 },
+          { kind: 'tongue', layer: 'b', cx: 19, hw: 4.5, ht: 30, amp: 2.2, jitter: 1.2, phase: 0.35, bulge: 1.08 },
+          { kind: 'tongue', layer: 'c', cx: 29, hw: 7, ht: 74, amp: 3.4, jitter: 1.5, phase: 0.6, bulge: 1.1 },
+          { kind: 'tongue', layer: 'c', cx: 34, hw: 4.5, ht: 37, amp: 2.4, jitter: 1.2, phase: 0.85, bulge: 1.08 },
+          { kind: 'tongue', layer: 'b', cx: 44, hw: 6, ht: 52, amp: 3, jitter: 1.4, phase: 0.25, bulge: 1.1 },
+          { kind: 'tongue', layer: 'b', cx: 51, hw: 4.5, ht: 32, amp: 2.2, jitter: 1.2, phase: 0.5, bulge: 1.08 },
+          { kind: 'wall', layer: 'd', x0: 16, x1: 48, ht: 22, amp: 1.8, jitter: 1, phase: 0.4 },
+          { kind: 'tongue', layer: 'e', cx: 26, hw: 5, ht: 20, amp: 2, jitter: 0.9, phase: 0.7, bulge: 1 },
+          { kind: 'tongue', layer: 'e', cx: 40, hw: 4.5, ht: 17, amp: 1.8, jitter: 0.9, phase: 0.9, bulge: 1 },
+        ],
+      },
+      {
+        level: 7, key: 'blast', name: '爆燃', desc: '整面火墙，全屏爆燃',
+        minRatio: 7.5, frameMs: 40, beat: 1000, sparks: 8,
+        palette: { a: '#92400e', b: '#f59e0b', c: '#fbbf24', d: '#fde68a', e: '#ffffff', glow: '#fbbf24', glow2: '#f59e0b', edge: '#fbbf24c0' },
+        shapes: [
+          { kind: 'wall', layer: 'a', x0: 0, x1: 64, ht: 72, amp: 3, jitter: 1.8, phase: 0.02 },
+          { kind: 'wall', layer: 'b', x0: 4, x1: 60, ht: 47, amp: 2.6, jitter: 1.6, phase: 0.15 },
+          { kind: 'tongue', layer: 'b', cx: 9, hw: 6, ht: 44, amp: 3, jitter: 1.6, phase: 0.1, bulge: 1.1 },
+          { kind: 'tongue', layer: 'b', cx: 18, hw: 5, ht: 31, amp: 2.6, jitter: 1.4, phase: 0.32, bulge: 1.08 },
+          { kind: 'tongue', layer: 'c', cx: 27, hw: 7, ht: 58, amp: 3.4, jitter: 1.6, phase: 0.55, bulge: 1.1 },
+          { kind: 'tongue', layer: 'c', cx: 36, hw: 5, ht: 37, amp: 2.6, jitter: 1.4, phase: 0.75, bulge: 1.08 },
+          { kind: 'tongue', layer: 'c', cx: 45, hw: 7, ht: 53, amp: 3.2, jitter: 1.6, phase: 0.87, bulge: 1.1 },
+          { kind: 'tongue', layer: 'b', cx: 55, hw: 5, ht: 35, amp: 2.4, jitter: 1.4, phase: 0.62, bulge: 1.08 },
+          { kind: 'wall', layer: 'd', x0: 10, x1: 54, ht: 34, amp: 2.2, jitter: 1.2, phase: 0.35 },
+          { kind: 'tongue', layer: 'e', cx: 24, hw: 5, ht: 25, amp: 2.2, jitter: 1, phase: 0.45, bulge: 1 },
+          { kind: 'tongue', layer: 'e', cx: 40, hw: 4.5, ht: 21, amp: 2, jitter: 1, phase: 0.8, bulge: 1 },
+        ],
+      },
+    ];
+
+    // Per-tier colours are emitted as plain CSS so rendering never depends on
+    // React style custom-property support; the dock, the card and the tier
+    // ladder all tint themselves through `data-tier`.
+    const TIER_CSS = TIERS.map((tier) => {
+      const p = tier.palette;
+      const sel = '.tb-fire[data-tier="' + tier.level + '"]';
+      return ''
+        + sel + '{--tb-glow:' + p.glow + 'cc;--tb-glow2:' + p.glow2 + '66;--tb-beat:' + tier.beat + 'ms}'
+        + sel + ' .tb-fire-a{fill:' + p.a + '}'
+        + sel + ' .tb-fire-b{fill:' + p.b + '}'
+        + sel + ' .tb-fire-c{fill:' + p.c + '}'
+        + sel + ' .tb-fire-d{fill:' + p.d + '}'
+        + sel + ' .tb-fire-e{fill:' + p.e + '}'
+        + sel + ' .tb-ember{fill:' + p.d + '}'
+        + '.tb-pill[data-tier="' + tier.level + '"] .tb-hot{color:' + p.d + '}'
+        + '.tb-tier-name[data-tier="' + tier.level + '"]{color:' + p.d + ';background:' + p.glow + '1f;border-color:' + p.glow + '55}'
+        + '.tb-pill[data-tier="' + tier.level + '"][data-burning="on"]{border-color:' + p.edge + '}'
+        + '.tb-card[data-tier="' + tier.level + '"]{--tb-halo:' + p.glow + '1a;box-shadow:0 28px 80px #020817d9,0 0 0 1px #ffffff08 inset,0 0 46px ' + p.glow + '26}'
+        + '.tb-ladder-bar[data-level="' + tier.level + '"]{color:' + p.glow + '}'
+        + '.tb-ladder-bar[data-level="' + tier.level + '"][data-on="on"]{background:' + p.glow + ';box-shadow:0 0 7px ' + p.glow + 'aa}';
+    }).join(' ');
     const CSS = `
       [data-token-burn]{font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#edf4ff;font-size:12px;line-height:1.4;letter-spacing:.01em}
       [data-token-burn] *{box-sizing:border-box}
@@ -27,16 +169,25 @@ window.__ModuleLoader__.load({
       .tb-pill:focus-visible,.tb-btn:focus-visible,.tb-tab:focus-visible{outline:2px solid #66e3ff;outline-offset:3px}
       .tb-fire{position:relative;display:inline-flex;align-items:flex-end;justify-content:center;flex:0 0 auto;transition:opacity .35s ease,filter .35s ease}
       .tb-fire svg{display:block;overflow:visible}
-      .tb-fire[data-burning="on"]{filter:drop-shadow(0 0 5px #66e3ffaa) drop-shadow(0 0 12px #4a6cff66);animation:tb-breathe 2.2s ease-in-out infinite}
-      .tb-fire[data-burning="off"]{opacity:.38;filter:grayscale(.55)}
+      .tb-fire path{transition:fill .35s ease}
+      .tb-fire[data-burning="on"]{filter:drop-shadow(0 0 5px var(--tb-glow,#66e3ffcc)) drop-shadow(0 0 13px var(--tb-glow2,#4a6cff66));animation:tb-breathe var(--tb-beat,2200ms) ease-in-out infinite}
+      .tb-pill .tb-fire[data-burning="on"]{filter:drop-shadow(0 0 3px var(--tb-glow,#66e3ffcc)) drop-shadow(0 0 7px var(--tb-glow2,#4a6cff66))}
+      .tb-fire[data-burning="off"]{opacity:.5;filter:grayscale(.6)}
       .tb-fire-a{fill:#2f6bff;opacity:.5}
       .tb-fire-b,.tb-fire-c{fill:#3f8dff;opacity:.62}
       .tb-fire-d{fill:#66e3ff;opacity:.92}
       .tb-fire-e{fill:#f2fbff}
-      .tb-hot{color:#9fb4d0;font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;white-space:nowrap}
+      .tb-ember{opacity:0}
+      .tb-ladder{display:flex;align-items:center;gap:7px;margin:0 0 12px;padding:0 2px}
+      .tb-ladder-k{font-size:9px;font-weight:800;letter-spacing:.14em;color:#7f96b5}
+      .tb-ladder-bars{display:flex;flex:1 1 auto;gap:3px;min-width:0}
+      .tb-ladder-bar{display:block;height:4px;flex:1 1 0;border-radius:2px;background:#22334f;transition:background .35s ease,box-shadow .35s ease,opacity .35s ease}
+      .tb-ladder-bar[data-on="off"]{opacity:.34}
+      .tb-ladder-v{font-size:9px;font-weight:800;color:#8ea6c4;font-variant-numeric:tabular-nums;white-space:nowrap}
+      .tb-hot{display:inline-block;min-width:34px;color:#9fb4d0;font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;white-space:nowrap}
       .tb-pill[data-burning="on"] .tb-hot{color:#a9ecff}
       .tb-rate{display:inline-flex;align-items:baseline;gap:3px;font-variant-numeric:tabular-nums;white-space:nowrap}
-      .tb-rate b{font-size:15px;font-weight:800;color:#f4f8ff;letter-spacing:-.02em}
+      .tb-rate b{display:inline-block;min-width:36px;text-align:right;font-size:15px;font-weight:800;color:#f4f8ff;letter-spacing:-.02em}
       .tb-unit{font-size:9px;font-weight:700;color:#7f96b5}
       .tb-sep{width:1px;height:18px;background:#ffffff1c;flex:0 0 auto}
       .tb-group{display:inline-flex;align-items:baseline;gap:5px;white-space:nowrap;min-width:0}
@@ -47,10 +198,11 @@ window.__ModuleLoader__.load({
       .tb-head:active{cursor:grabbing}
       .tb-title{font-size:13px;font-weight:750;letter-spacing:.01em;flex:1;color:#f2f6ff;white-space:nowrap}
       .tb-sub{font-size:9px;font-weight:800;letter-spacing:.12em;color:#70e1d2;background:#5eead414;border:1px solid #5eead240;padding:4px 7px;border-radius:6px}
+      .tb-tier-name{letter-spacing:.04em;white-space:nowrap}
       .tb-btn{border:1px solid transparent;background:transparent;color:#849ab7;border-radius:8px;padding:4px 7px;cursor:pointer;font-size:18px;line-height:1;transition:background .2s,color .2s,border-color .2s}
       .tb-btn:hover{background:#ffffff10;color:#f3f7ff;border-color:#ffffff18}
       .tb-body{padding:14px 16px 15px}
-      .tb-hero{display:flex;align-items:center;gap:11px;padding:11px 13px;margin-bottom:12px;border:1px solid #ffffff14;border-radius:12px;background:radial-gradient(130% 150% at 0% 50%,#ff9a4d1a,transparent 58%),linear-gradient(120deg,#ffffff0d,#ffffff04)}
+      .tb-hero{display:flex;align-items:center;gap:11px;padding:11px 13px;margin-bottom:12px;border:1px solid #ffffff14;border-radius:12px;background:radial-gradient(130% 150% at 0% 50%,var(--tb-halo,#ff9a4d1a),transparent 58%),linear-gradient(120deg,#ffffff0d,#ffffff04)}
       .tb-hero-main{flex:1;min-width:0}
       .tb-hero-num{display:flex;align-items:baseline;gap:4px;font-size:25px;font-weight:800;letter-spacing:-.03em;color:#f7fbff;font-variant-numeric:tabular-nums;line-height:1.05}
       .tb-hero-num span{font-size:10px;font-weight:700;color:#8ba3c2;letter-spacing:.02em}
@@ -107,7 +259,8 @@ window.__ModuleLoader__.load({
       @keyframes tb-pulse{0%,100%{opacity:.45}50%{opacity:1}}
       @keyframes tb-in{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}
       @media(max-width:430px){.tb-card{width:calc(100vw - 16px);max-width:calc(100vw - 16px)}.tb-body{padding:12px}.tb-head{padding:13px 12px}.tb-stats{gap:5px}.tb-stat{padding:9px 7px}.tb-value{font-size:13px}.tb-hero-num{font-size:21px}.tb-spark{display:none}.tb-bars,.tb-grid,.tb-axis{height:110px}}
-      @media(prefers-reduced-motion:reduce){.tb-fire,.tb-card,.tb-live-dot{animation:none}.tb-pill,.tb-bar-fill,.tb-cell,.tb-fire{transition:none}}
+      @media(prefers-reduced-motion:reduce){.tb-fire,.tb-fire[data-burning="on"],.tb-card,.tb-live-dot{animation:none}.tb-pill,.tb-bar-fill,.tb-cell,.tb-fire,.tb-fire path,.tb-ladder-bar{transition:none}}
+      ${TIER_CSS}
     `;
 
     function round1(n) {
@@ -228,45 +381,176 @@ window.__ModuleLoader__.load({
         + ' ' + round1(cx - hw) + ' ' + round1(base) + 'Z';
     }
 
-    // Pre-rendered sequence frames: 5 layered tongues per frame, deterministic per index.
-    function flameFrames(count) {
+    // A rounded mass of fire: broad shoulders and a soft tip ("一团火").
+    function flameBlob(cx, base, hw, ht, lean, bulge) {
+      const tipX = cx + lean;
+      const tipY = base - ht;
+      const side = hw * (1 + (bulge || 1) * 0.12);
+      return 'M' + round1(cx - hw) + ' ' + round1(base)
+        + 'C' + round1(cx - side) + ' ' + round1(base - ht * 0.34)
+        + ' ' + round1(tipX - side * 0.8) + ' ' + round1(tipY + ht * 0.44)
+        + ' ' + round1(tipX) + ' ' + round1(tipY)
+        + 'C' + round1(tipX + side * 0.8) + ' ' + round1(tipY + ht * 0.44)
+        + ' ' + round1(cx + side) + ' ' + round1(base - ht * 0.34)
+        + ' ' + round1(cx + hw) + ' ' + round1(base)
+        + 'C' + round1(cx + hw * 0.55) + ' ' + round1(base + ht * 0.05)
+        + ' ' + round1(cx - hw * 0.55) + ' ' + round1(base + ht * 0.05)
+        + ' ' + round1(cx - hw) + ' ' + round1(base) + 'Z';
+    }
+
+    // A wall / sea of fire: a wide base with a wavy multi-bump crown. `wob`
+    // shifts the crowns up and down per frame so the wall breathes.
+    function fireWall(x0, x1, base, ht, wob) {
+      const w = x1 - x0;
+      const top = base - ht;
+      const px = (fx) => round1(x0 + w * fx);
+      const py = (fy) => round1(fy);
+      const crown = (fx, depth, dir) => px(fx) + ' ' + py(top + ht * depth + wob * dir);
+      return 'M' + px(0) + ' ' + py(base)
+        + 'C' + px(0.01) + ' ' + py(top + ht * 0.52) + ' ' + crown(0.04, 0.08, 0.5) + ' ' + crown(0.09, 0.16, -1)
+        + 'C' + crown(0.2, 0.04, 1) + ' ' + crown(0.28, 0.18, -1) + ' ' + crown(0.36, 0.02, 0.6)
+        + 'C' + crown(0.44, -0.04, 1) + ' ' + crown(0.52, 0.2, -0.8) + ' ' + crown(0.6, 0.08, 1)
+        + 'C' + crown(0.68, -0.02, -0.6) + ' ' + crown(0.76, 0.19, 1) + ' ' + crown(0.84, 0.1, -0.8)
+        + 'C' + px(0.92) + ' ' + py(top + ht * 0.3) + ' ' + px(0.99) + ' ' + py(top + ht * 0.52)
+        + ' ' + px(1) + ' ' + py(base)
+        + 'C' + px(0.66) + ' ' + py(base + ht * 0.05) + ' ' + px(0.34) + ' ' + py(base + ht * 0.05)
+        + ' ' + px(0) + ' ' + py(base) + 'Z';
+    }
+
+    // The dock sits idle most of the day, so the extinguished icon keeps the old
+    // full-size flame silhouette (calm, no jitter) instead of shrinking to the
+    // tier-1 speck. It is rendered desaturated by `.tb-fire[data-burning="off"]`.
+    const IDLE_FRAME = [
+      { layer: 'a', d: flameBlob(32, FIRE_BASE, 19, 78, 0, 1.16) },
+      { layer: 'c', d: flameBlob(32, FIRE_BASE, 12, 58, 0, 1.1) },
+      { layer: 'e', d: flameBlob(32, FIRE_BASE, 7, 38, 0, 1.02) },
+    ];
+
+    const FRAME_CACHE = new Map();
+
+    // Pre-render a tier's 16 frames once. Frames are deterministic per tier so
+    // the same tier always flickers the same way, and switching tiers is cheap
+    // after the first visit.
+    function framesFor(level) {
+      const wanted = Math.max(1, Math.min(TIERS.length, Math.round(Number(level) || 1)));
+      const cached = FRAME_CACHE.get(wanted);
+      if (cached) return cached;
+      const tier = TIERS[wanted - 1];
       const frames = [];
-      for (let i = 0; i < count; i += 1) {
-        const rng = makeRng(i * 2654435761 + 9871);
-        const sway = rng() * 2 - 1;
-        const wobble = rng() * 2 - 1;
-        frames.push({
-          a: teardrop(32 + wobble * 1.2, 93, 18 + rng() * 1.5, 74 + rng() * 8, sway * 6, 1.1 + rng() * 0.3),
-          b: teardrop(20 + wobble * 1.4, 93, 7.5 + rng(), 34 + rng() * 10, sway * -5 - 3, 1.2),
-          c: teardrop(44 + wobble * 1.4, 93, 7 + rng(), 30 + rng() * 12, sway * 5 + 3, 1.2),
-          d: teardrop(32 + wobble * 0.8, 93, 11.5 + rng(), 52 + rng() * 9, sway * -4, 1.05),
-          e: teardrop(32 + wobble * 0.5, 93, 6 + rng() * 0.8, 30 + rng() * 7, sway * 2, 1.05),
-        });
+      for (let i = 0; i < FRAME_COUNT; i += 1) {
+        const rng = makeRng(tier.level * 7919 + i * 2654435761 + 1337);
+        const phase = i / FRAME_COUNT;
+        const paths = [];
+        for (const shape of tier.shapes) {
+          const sway = Math.sin((phase + shape.phase) * Math.PI * 2) * shape.amp + (rng() * 2 - 1) * shape.jitter;
+          const grow = 1 + (rng() * 2 - 1) * 0.07;
+          const hw = shape.hw * (1 + (rng() * 2 - 1) * 0.05);
+          const ht = shape.ht * grow;
+          let d;
+          if (shape.kind === 'wall') d = fireWall(shape.x0, shape.x1, FIRE_BASE, ht, sway * 0.9);
+          else if (shape.kind === 'blob') d = flameBlob(shape.cx, FIRE_BASE, hw, ht, sway * 0.6, shape.bulge);
+          else d = teardrop(shape.cx + sway * 0.2, FIRE_BASE, hw, ht, sway, shape.bulge);
+          paths.push({ layer: shape.layer, d: d });
+        }
+        paths.sort((a, b) => (a.layer < b.layer ? -1 : 1));
+        frames.push(paths);
       }
+      FRAME_CACHE.set(wanted, frames);
       return frames;
+    }
+
+    // The viewer's own "normal" burn rate, in token/s. Dividing by it (instead
+    // of using absolute token/s cut-offs) keeps the ladder useful for a light
+    // user and a heavy user alike. Today counts only the seconds elapsed so
+    // far, otherwise a fresh install would look 100x hotter than it is.
+    function burnBaseline(snapshot, nowMs) {
+      const snap = snapshot || {};
+      const total30 = Number(snap.recent30) || 0;
+      if (!(total30 > 0)) return 0;
+      const days = Array.isArray(snap.days) ? snap.days.map((v) => Number(v) || 0) : [];
+      const active = days.filter((v) => v > 0).length;
+      const at = Number(nowMs) || Date.now();
+      const dayStart = new Date(at);
+      dayStart.setHours(0, 0, 0, 0);
+      const elapsed = Math.max(60, (at - dayStart.getTime()) / 1000);
+      const todayKnown = days.length > 0 && days[days.length - 1] > 0;
+      // Today only has `elapsed` seconds of history, so it must not be counted
+      // as a full day or the baseline would be muted by the rest of the day.
+      const seconds = Math.max(60, active * DAY_SECONDS - (todayKnown ? DAY_SECONDS - elapsed : 0));
+      return total30 / seconds;
+    }
+
+    function tierOf(rate, baseline) {
+      const value = Number(rate);
+      if (!(value > LIVE_EPSILON)) return 0;
+      const base = Math.max(Number(baseline) || 0, 0.5);
+      const ratio = value / base;
+      let level = 1;
+      for (let i = 0; i < TIERS.length; i += 1) {
+        if (ratio >= TIERS[i].minRatio) level = TIERS[i].level;
+      }
+      return level;
+    }
+
+    // Ember positions are part of the tier art (not of the frame clock), so they
+    // are generated from the tier alone and are testable without React.
+    function embersFor(level) {
+      const tier = Math.max(1, Math.min(TIERS.length, Math.round(Number(level) || 1)));
+      const info = TIERS[tier - 1];
+      return Array.from({ length: info.sparks }, (_, i) => {
+        const seed = makeRng(tier * 977 + i * 131);
+        const cx = 8 + seed() * 48;
+        return {
+          cx: round1(cx),
+          drift: round1((seed() * 2 - 1) * 6),
+          begin: '-' + round1(seed() * 1.6) + 's',
+          dur: round1(1.2 + seed() * 0.9) + 's',
+          top: round1(30 + seed() * 26),
+          r: round1(2.8 + seed() * 1.1),
+        };
+      });
+    }
+
+    // Fire flares up quickly and cools down slowly, so a short burst reads as a
+    // flare instead of the dock slamming between levels on every poll.
+    function useTier(rate, baseline) {
+      const target = tierOf(rate, baseline);
+      const [tier, setTier] = useState(target);
+      useEffect(() => {
+        if (target === tier) return undefined;
+        const id = setTimeout(() => setTier(target), target > tier ? RISE_MS : FALL_MS);
+        return () => clearTimeout(id);
+      }, [target, tier]);
+      return tier;
     }
 
     function Fire(props) {
       const width = props.width || 18;
       const burning = props.burning !== false;
+      const tier = Math.max(1, Math.min(TIERS.length, Math.round(Number(props.tier) || 1)));
+      const info = TIERS[tier - 1];
       const reduced = useReducedMotion();
-      const frames = useMemo(() => flameFrames(FRAME_COUNT), []);
+      const frames = useMemo(() => framesFor(tier), [tier]);
       const [frame, setFrame] = useState(0);
       const active = burning && !reduced;
       useEffect(() => {
         if (!active) { setFrame(0); return undefined; }
-        const id = setInterval(() => setFrame((v) => (v + 1) % frames.length), FRAME_MS);
+        setFrame(0);
+        const id = setInterval(() => setFrame((v) => (v + 1) % FRAME_COUNT), info.frameMs);
         return () => clearInterval(id);
-      }, [active, frames.length]);
-      const f = frames[frame % frames.length];
+      }, [active, tier, info.frameMs]);
+      const f = burning ? frames[frame % frames.length] : IDLE_FRAME;
       const height = Math.round(width * 1.5);
-      return h('span', { className: 'tb-fire', 'data-burning': burning ? 'on' : 'off', style: { width: width, height: height }, 'aria-hidden': 'true' },
+      const embers = burning && !reduced && width >= MIN_EMBER_WIDTH
+        ? embersFor(tier).map((e, i) => h('circle', { key: 'e' + i, className: 'tb-ember', cx: e.cx, cy: 90, r: e.r },
+          h('animate', { attributeName: 'cy', values: '92;' + e.top, dur: e.dur, begin: e.begin, repeatCount: 'indefinite' }),
+          h('animate', { attributeName: 'cx', values: e.cx + ';' + round1(e.cx + e.drift), dur: e.dur, begin: e.begin, repeatCount: 'indefinite' }),
+          h('animate', { attributeName: 'opacity', values: '0;.95;0', dur: e.dur, begin: e.begin, repeatCount: 'indefinite' })))
+        : null;
+      return h('span', { className: 'tb-fire', 'data-burning': burning ? 'on' : 'off', 'data-tier': burning ? String(tier) : '0', style: { width: width, height: height }, 'aria-hidden': 'true' },
         h('svg', { viewBox: FIRE_VB, width: width, height: height, focusable: 'false' },
-          h('path', { className: 'tb-fire-a', d: f.a }),
-          h('path', { className: 'tb-fire-b', d: f.b }),
-          h('path', { className: 'tb-fire-c', d: f.c }),
-          h('path', { className: 'tb-fire-d', d: f.d }),
-          h('path', { className: 'tb-fire-e', d: f.e })));
+          f.map((path, i) => h('path', { key: 'f' + i, className: 'tb-fire-' + path.layer, d: path.d })),
+          embers));
     }
 
     function Sparkline(props) {
@@ -417,8 +701,15 @@ window.__ModuleLoader__.load({
       dayStart.setHours(0, 0, 0, 0);
       const seconds = Math.max(60, (now - dayStart.getTime()) / 1000);
       const dailyAvg = total / seconds;
-      const liveRate = rate > 0.01 ? rate : (primed ? 0 : dailyAvg);
-      const burning = liveRate > 0.01;
+      const liveRate = rate > LIVE_EPSILON ? rate : (primed ? 0 : dailyAvg);
+      // Burn tier: relative to the viewer's own 30-day baseline so the whole
+      // ladder stays reachable whether they burn 50 or 200k token/s.
+      const baseline = burnBaseline(snapshot, now);
+      // Before the first few polls `liveRate` falls back to today's average, which
+      // is fine for the number but would invent a burning tier on every reload.
+      const tier = useTier(primed ? liveRate : 0, baseline);
+      const burning = tier > 0;
+      const tierInfo = burning ? TIERS[tier - 1] : null;
       // Huge ratios (a burst against a whole-day average) are meaningless as a
       // percentage; show a multiple instead so the chip stays readable.
       const ratio = dailyAvg > 0 ? liveRate / dailyAvg : 1;
@@ -490,13 +781,28 @@ window.__ModuleLoader__.load({
 
       const content = h('div', { className: 'tb-body' },
         h('div', { className: 'tb-hero' },
-          h(Fire, { width: 34, burning: burning }),
+          h(Fire, { width: 34, burning: burning, tier: tier }),
           h('div', { className: 'tb-hero-main' },
             h('div', { className: 'tb-hero-num' }, fmtRate(liveRate), h('span', null, 'token/s')),
             h('div', { className: 'tb-hero-meta' },
               h('span', { className: 'tb-chip', title: '相对今日每秒平均' }, trend),
-              h('span', { className: 'tb-hero-note' }, burning ? '熊熊燃烧中' : '已熄灭 · 暂无新增燃烧'))),
+              h('span', { className: 'tb-hero-note' }, burning ? tierInfo.desc : '已熄灭 · 暂无新增燃烧'))),
           h(Sparkline, { data: history })),
+        h('div', {
+          className: 'tb-ladder',
+          role: 'img',
+          'aria-label': burning ? ('火候：第 ' + tier + ' 档 / 共 7 档，' + tierInfo.name + '，' + tierInfo.desc) : '火候：已熄灭，共 7 档',
+        },
+          h('span', { className: 'tb-ladder-k' }, '火候'),
+          h('div', { className: 'tb-ladder-bars' },
+            TIERS.map((item) => h('i', {
+              key: 'lv' + item.level,
+              className: 'tb-ladder-bar',
+              'data-level': item.level,
+              'data-on': burning && item.level <= tier ? 'on' : 'off',
+              title: item.name + ' · ' + item.desc,
+            }))),
+          h('span', { className: 'tb-ladder-v' }, (burning ? tier : 0) + '/7')),
         h('div', { className: 'tb-stats' },
           stat('今日燃烧', fmt(easedToday), 'tokens'),
           stat('近 30 天', fmt(easedRecent), 'tokens'),
@@ -525,10 +831,11 @@ window.__ModuleLoader__.load({
           h('span', null, h('i', { className: 'tb-live-dot' }), online ? '数据随会话实时更新' : '连接中断，重试中'),
           h('span', null, '每秒刷新')));
 
-      const card = h('section', { className: 'tb-card', 'aria-label': 'Token 燃烧指数详情' },
+      const card = h('section', { className: 'tb-card', 'data-tier': burning ? String(tier) : '0', 'aria-label': 'Token 燃烧指数详情' },
         h('div', { className: 'tb-head', onMouseDown: startDrag },
-          h(Fire, { width: 17, burning: burning }),
+          h(Fire, { width: 17, burning: burning, tier: tier }),
           h('div', { className: 'tb-title' }, 'Token 燃烧指数'),
+          burning ? h('span', { className: 'tb-sub tb-tier-name', 'data-tier': String(tier), title: '火候 ' + tier + '/7 · ' + tierInfo.name }, 'Lv.' + tier + ' ' + tierInfo.name) : null,
           h('span', { className: 'tb-sub', 'aria-label': '实时状态' }, online ? 'LIVE' : 'OFFLINE'),
           h('button', { className: 'tb-btn', type: 'button', onMouseDown: (e) => e.stopPropagation(), onClick: () => setOpen(false), 'aria-label': '收起 Token 燃烧指数' }, '×')),
         content);
@@ -537,12 +844,14 @@ window.__ModuleLoader__.load({
         className: 'tb-pill',
         type: 'button',
         'data-burning': burning ? 'on' : 'off',
+        'data-tier': burning ? String(tier) : '0',
+        title: burning ? '火候 ' + tier + '/7 · ' + tierInfo.name + ' · ' + tierInfo.desc : '已熄灭 · 暂无新增燃烧',
         onMouseDown: startDrag,
         onClick: openCard,
-        'aria-label': '展开 Token 燃烧指数：' + (burning ? '燃烧中 ' : '已熄灭 ') + fmtRate(liveRate) + ' token/s，今日 ' + fmt(total),
+        'aria-label': '展开 Token 燃烧指数：' + (burning ? tierInfo.name + '（第 ' + tier + ' 档）' : '已熄灭') + '，' + fmtRate(liveRate) + ' token/s，今日 ' + fmt(total),
       },
-        h(Fire, { width: 19, burning: burning }),
-        h('span', { className: 'tb-hot' }, burning ? '燃烧中' : '已熄灭'),
+        h(Fire, { width: 19, burning: burning, tier: tier }),
+        h('span', { className: 'tb-hot' }, burning ? tierInfo.name : '已熄灭'),
         h('span', { className: 'tb-rate' },
           h('b', null, fmtRate(liveRate)),
           h('span', { className: 'tb-unit' }, 'token/s')),
@@ -561,6 +870,13 @@ window.__ModuleLoader__.load({
       ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: 'dsh-token-burned', order: 92 }, Flame));
     }
 
-    return { apply, inject: ['slots'] };
+    // Test / tooling surface: verify/tiers.mjs and verify/preview.mjs read this
+    // to assert tier behaviour and render the 7-tier contact sheet offline. The
+    // runtime never touches it.
+    return {
+      apply,
+      inject: ['slots'],
+      __tbArt: { TIERS, FRAME_COUNT, RISE_MS, FALL_MS, framesFor, idleFrame: () => IDLE_FRAME, embersFor, tierOf, burnBaseline, CSS },
+    };
   },
 });

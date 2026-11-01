@@ -1,7 +1,7 @@
 {
   "name": "dsh-plugin-token-burned",
-  "version": "0.2.0",
-  "description": "DSH floating Token Burn Dock with live burn rate, sequence-frame flame, and timezone-correct hourly usage views",
+  "version": "0.3.0",
+  "description": "DSH floating Token Burn Dock with live burn rate, seven animated burn tiers, and timezone-correct hourly usage views",
   "type": "module",
   "main": "./index.js",
   "icon": "icon.svg",
@@ -43,14 +43,16 @@
     "README.en.md",
     "CHANGELOG.md",
     "docs/preview-real.webp",
+    "docs/preview-tiers.webp",
     "LICENSE",
     "package.json"
   ],
   "scripts": {
-    "test": "node verify/smoke.mjs && node verify/baseline.mjs",
+    "test": "node verify/smoke.mjs && node verify/baseline.mjs && node verify/tiers.mjs",
     "hours": "node verify/hours.mjs",
     "backfill": "node verify/backfill.mjs",
-    "prepublishOnly": "node verify/smoke.mjs"
+    "prepublishOnly": "node verify/smoke.mjs",
+    "preview": "node verify/preview.mjs"
   },
   "dsh": {
     "bundle": {
